@@ -11,6 +11,7 @@ class ApiConfig {
   // Trip Planning Endpoints
   static const String planTripEndpoint = '/api/v1/plantrip';
   static const String chatEndpoint = '/api/v1/chat';
+  static const String smartAdjustEndpoint = '/api/v1/smartadjust';
   
   // Itinerary Management Endpoints
   static const String itinerariesEndpoint = '/api/v1/itineraries';

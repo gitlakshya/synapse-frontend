@@ -25,7 +25,7 @@ class CommunityService {
     stories.insert(0, story);
     if (stories.length > 50) stories.removeLast(); // Keep last 50 stories
     
-    html.window.localStorage[_storiesKey] = json.encode(stories.map((s => s.toJson()).toList()));
+    html.window.localStorage[_storiesKey] = json.encode(stories.map((s) => s.toJson()).toList());
   }
 
   static Future<List<Mentor>> getAvailableMentors(String destination) async {

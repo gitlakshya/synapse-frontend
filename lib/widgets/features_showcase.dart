@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import '../services/camera_service.dart';
+// Removed mobile-only services: camera_service, ar_service
 import '../services/integration_service.dart';
 import '../services/collaboration_service.dart';
 import '../services/personalization_service.dart';
-import '../services/ar_service.dart';
 import '../services/analytics_service.dart';
 import '../services/gamification_service.dart';
 import '../services/community_service.dart';

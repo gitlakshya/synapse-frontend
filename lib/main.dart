@@ -2,6 +2,7 @@
 import 'dart:math';
 import 'dart:async';
 import 'dart:ui';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -19,7 +20,9 @@ import 'firebase_options.dart';
 import 'services/web_auth_service.dart';
 import 'services/gemini_service.dart';
 import 'services/api_service.dart';
+import 'services/authenticated_http_client.dart';
 import 'services/theme_service.dart';
+import 'config/api_config.dart';
 import 'widgets/animated_hero_section.dart';
 import 'widgets/interactive_map_widget.dart';
 import 'screens/mock_booking_screen.dart';
@@ -2125,7 +2128,7 @@ class _CustomizationPageState extends State<CustomizationPage> with TickerProvid
                                   ],
                                 ),
                                 backgroundColor: Colors.deepOrangeAccent,
-                                duration: Duration(seconds: 30),
+                                duration: Duration(seconds: 130), // Slightly longer than API timeout
                               ),
                             );
                             
@@ -2605,6 +2608,12 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
   
   List<LatLng> _routePoints = [];
   List<Map<String, String>> _localEvents = [];
+  
+  // Itinerary metadata for Smart Adjust API
+  String? itineraryTitle;
+  String? destination;
+  String? itineraryId;
+  double? totalBudget;
   int _currentEventIndex = 0;
   
   final TextEditingController _searchController = TextEditingController();
@@ -2617,11 +2626,17 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
   @override
   void initState() {
     super.initState();
-    // Use API response if available, otherwise generate mock data
+    // Only use API response - no fallback to mock data
     if (widget.apiResponse != null) {
       _generateFromApiResponse();
     } else {
-      _generateMockPlan();
+      // If no API response, initialize empty state
+      days = [];
+      hotelCost = 0;
+      transportCost = 0;
+      experiencesCost = 0;
+      foodCost = 0;
+      _routePoints = [];
     }
     // Single animation controller for better performance
     _mainAnimationController = AnimationController(
@@ -2714,29 +2729,6 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
       const SnackBar(content: Text('Exported to Apple Calendar!'), backgroundColor: Colors.green),
     );
   }
-
-  void _generateMockPlan() {
-    final r = Random(widget.prefs.destination.hashCode == 0 ? DateTime.now().millisecondsSinceEpoch : widget.prefs.destination.hashCode);
-    final nDays = 2 + r.nextInt(4);
-    
-    // Generate route points based on destination
-    _routePoints = _getDestinationCoordinates(widget.prefs.destination);
-    
-    days = List.generate(nDays, (i) {
-      final day = i + 1;
-      final activities = _generateDayActivities(day, r);
-      return ItineraryDay(dayNumber: day, items: activities);
-    });
-
-    // Dynamic costs based on destination and budget
-    final baseCosts = _getDestinationBaseCosts(widget.prefs.destination.toLowerCase());
-    final budgetMultiplier = (widget.prefs.budget / 50000).clamp(0.5, 3.0);
-    
-    hotelCost = (baseCosts['hotel']! * budgetMultiplier * nDays).round();
-    transportCost = (baseCosts['transport']! * budgetMultiplier).round();
-    experiencesCost = (baseCosts['experiences']! * budgetMultiplier * nDays).round();
-    foodCost = (baseCosts['food']! * budgetMultiplier * nDays).round();
-  }
   
   void _generateFromApiResponse() {
     final apiResponse = widget.apiResponse!;
@@ -2753,9 +2745,9 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
           id: activity['poiId'] ?? 'fallback_${Random().nextInt(10000)}',
           title: activity['title'] ?? 'Unknown Activity',
           description: activity['description'] ?? 'No description available',
-          image: _getActivityImage(activity['category'] ?? 'culture'),
-          rating: 4.0 + Random().nextDouble(),
-          reviews: 100 + Random().nextInt(500),
+          image: '', // Remove image URL - no longer used
+          rating: 4.0, // Use static default rating
+          reviews: 100, // Use static default reviews
           approxCost: activity['cost'] ?? 0,
           startTime: _getTimeFromActivity(activity, 'start'),
           endTime: _getTimeFromActivity(activity, 'end'),
@@ -2789,19 +2781,6 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
     
     // Generate route points from first few activities
     _routePoints = _generateRoutePointsFromActivities(days);
-  }
-  
-  String _getActivityImage(String category) {
-    const categoryImages = {
-      'heritage': 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=400',
-      'culture': 'https://images.unsplash.com/photo-1545558014-8692077e9b5c?w=400',
-      'nature': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400',
-      'food': 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400',
-      'adventure': 'https://images.unsplash.com/photo-1551632811-561732d1e306?w=400',
-      'transport': 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=400',
-      'leisure': 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=400',
-    };
-    return categoryImages[category] ?? categoryImages['culture']!;
   }
   
   String _getTimeFromActivity(Map<String, dynamic> activity, String type) {
@@ -2915,240 +2894,6 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
     ];
   }
   
-  List<ItineraryItem> _generateDayActivities(int day, Random r) {
-    final destination = widget.prefs.destination.toLowerCase();
-    final themes = widget.prefs.themes;
-    
-    // Get destination-specific activities
-    final destinationActivities = _getDestinationActivities(destination);
-    
-    // Filter activities based on selected themes
-    final filteredActivities = _filterActivitiesByThemes(destinationActivities, themes);
-    
-    // Select activities for different times of day
-    final morningOptions = filteredActivities['morning'] ?? [];
-    final afternoonOptions = filteredActivities['afternoon'] ?? [];
-    final eveningOptions = filteredActivities['evening'] ?? [];
-    
-    final morning = morningOptions.isNotEmpty ? morningOptions[r.nextInt(morningOptions.length)] : _getDefaultActivity('morning');
-    final afternoon = afternoonOptions.isNotEmpty ? afternoonOptions[r.nextInt(afternoonOptions.length)] : _getDefaultActivity('afternoon');
-    final evening = eveningOptions.isNotEmpty ? eveningOptions[r.nextInt(eveningOptions.length)] : _getDefaultActivity('evening');
-    
-    // Adjust costs based on themes and group size
-    final costMultiplier = _getCostMultiplier();
-    
-    return [
-      ItineraryItem(
-        title: morning['title']!,
-        description: morning['desc']!,
-        image: morning['image']!,
-        rating: 4.2 + r.nextDouble() * 0.8,
-        reviews: 100 + r.nextInt(400),
-        approxCost: ((morning['baseCost'] as int) * costMultiplier).round(),
-        startTime: _getActivityStartTime('morning', day),
-        endTime: _getActivityEndTime('morning', day),
-        duration: _getActivityDuration(morning['title']!),
-        id: 'morning_${day}_${Random().nextInt(1000)}',
-        currentPrice: ((morning['baseCost'] as int) * costMultiplier).toDouble(),
-        lastPriceUpdate: DateTime.now(),
-        difficulty: _getDifficulty(morning['title']!),
-        isAccessible: _isAccessible(morning['title']!),
-        insiderTip: _getInsiderTip(morning['title']!),
-        isOpen: true,
-        crowdLevel: 'Low',
-        localPhrases: _getLocalPhrases(destination),
-        emergencyContact: _getEmergencyContact(destination),
-        hasBooking: _hasBooking(morning['title']!),
-        travelTimeToNext: 30,
-      ),
-      ItineraryItem(
-        title: afternoon['title']!,
-        description: afternoon['desc']!,
-        image: afternoon['image']!,
-        rating: 4.0 + r.nextDouble() * 0.9,
-        reviews: 60 + r.nextInt(300),
-        approxCost: ((afternoon['baseCost'] as int) * costMultiplier).round(),
-        startTime: _getActivityStartTime('afternoon', day),
-        endTime: _getActivityEndTime('afternoon', day),
-        duration: _getActivityDuration(afternoon['title']!),
-        id: 'afternoon_${day}_${Random().nextInt(1000)}',
-        currentPrice: ((afternoon['baseCost'] as int) * costMultiplier).toDouble(),
-        lastPriceUpdate: DateTime.now(),
-        difficulty: _getDifficulty(afternoon['title']!),
-        isAccessible: _isAccessible(afternoon['title']!),
-        insiderTip: _getInsiderTip(afternoon['title']!),
-        isOpen: true,
-        crowdLevel: 'Moderate',
-        localPhrases: _getLocalPhrases(destination),
-        emergencyContact: _getEmergencyContact(destination),
-        hasBooking: _hasBooking(afternoon['title']!),
-        travelTimeToNext: 45,
-      ),
-      ItineraryItem(
-        title: evening['title']!,
-        description: evening['desc']!,
-        image: evening['image']!,
-        rating: 4.1 + r.nextDouble() * 0.9,
-        reviews: 30 + r.nextInt(200),
-        approxCost: ((evening['baseCost'] as int) * costMultiplier).round(),
-        startTime: _getActivityStartTime('evening', day),
-        endTime: _getActivityEndTime('evening', day),
-        duration: _getActivityDuration(evening['title']!),
-        id: 'evening_${day}_${Random().nextInt(1000)}',
-        currentPrice: ((evening['baseCost'] as int) * costMultiplier).toDouble(),
-        lastPriceUpdate: DateTime.now(),
-        difficulty: _getDifficulty(evening['title']!),
-        isAccessible: _isAccessible(evening['title']!),
-        insiderTip: _getInsiderTip(evening['title']!),
-        isOpen: true,
-        crowdLevel: 'High',
-        localPhrases: _getLocalPhrases(destination),
-        emergencyContact: _getEmergencyContact(destination),
-        hasBooking: _hasBooking(evening['title']!),
-        travelTimeToNext: 0,
-      ),
-    ];
-  }
-  
-  Map<String, List<Map<String, dynamic>>> _getDestinationActivities(String destination) {
-    final activitiesMap = {
-      'goa': {
-        'morning': [
-          {'title': 'Baga Beach Walk', 'desc': 'Morning stroll along pristine Baga Beach with water sports', 'image': 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=900&h=600&fit=crop&q=goa+beach', 'baseCost': 500},
-          {'title': 'Old Goa Churches Tour', 'desc': 'Visit Basilica of Bom Jesus and Se Cathedral', 'image': 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?w=900&h=600&fit=crop&q=goa+church+basilica', 'baseCost': 300},
-          {'title': 'Panaji Heritage Walk', 'desc': 'Explore Portuguese colonial architecture in Panaji', 'image': 'https://images.unsplash.com/photo-1539650116574-75c0c6d73f6e?w=900&h=600&fit=crop&q=goa+panaji+colonial', 'baseCost': 400},
-        ],
-        'afternoon': [
-          {'title': 'Goan Spice Plantation Tour', 'desc': 'Learn about spices and enjoy traditional Goan lunch', 'image': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=900&h=600&fit=crop&q=goa+spice+plantation', 'baseCost': 1200},
-          {'title': 'Calangute Beach Activities', 'desc': 'Parasailing, jet skiing and beach volleyball', 'image': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=900&h=600&fit=crop&q=goa+beach+watersports', 'baseCost': 2000},
-          {'title': 'Margao Market Shopping', 'desc': 'Local market for spices, cashews and handicrafts', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop&q=goa+market+spices', 'baseCost': 800},
-        ],
-        'evening': [
-          {'title': 'Anjuna Beach Sunset', 'desc': 'Spectacular sunset views with beach shacks', 'image': 'https://images.unsplash.com/photo-1512343879784-a960bf40e7f2?w=900&h=600&fit=crop&q=goa+beach+sunset', 'baseCost': 600},
-          {'title': 'Tito\'s Lane Nightlife', 'desc': 'Famous nightclub strip with live music and dancing', 'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=900&h=600&fit=crop&q=goa+nightlife+club', 'baseCost': 1500},
-          {'title': 'Beach Shack Dinner', 'desc': 'Fresh seafood dining by the ocean', 'image': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&h=600&fit=crop&q=goa+seafood+beach+restaurant', 'baseCost': 1200},
-        ],
-      },
-      'kerala': {
-        'morning': [
-          {'title': 'Alleppey Backwater Cruise', 'desc': 'Houseboat journey through scenic backwaters', 'image': 'https://images.unsplash.com/photo-1602216056096-3b40cc0c9944?w=900&h=600&fit=crop&q=kerala+backwaters+houseboat', 'baseCost': 2500},
-          {'title': 'Munnar Tea Garden Tour', 'desc': 'Visit tea plantations and learn about tea processing', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop&q=kerala+munnar+tea+plantation', 'baseCost': 800},
-          {'title': 'Kochi Fort Walk', 'desc': 'Explore Dutch Palace and Chinese fishing nets', 'image': 'https://images.unsplash.com/photo-1539650116574-75c0c6d73f6e?w=900&h=600&fit=crop&q=kerala+kochi+chinese+fishing+nets', 'baseCost': 400},
-        ],
-        'afternoon': [
-          {'title': 'Kerala Cooking Class', 'desc': 'Learn to cook authentic Kerala dishes with coconut', 'image': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=900&h=600&fit=crop', 'baseCost': 1500},
-          {'title': 'Kumarakom Bird Sanctuary', 'desc': 'Boat ride through bird sanctuary and mangroves', 'image': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=900&h=600&fit=crop', 'baseCost': 1000},
-          {'title': 'Wayanad Spice Market', 'desc': 'Shop for cardamom, pepper and other spices', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop', 'baseCost': 600},
-        ],
-        'evening': [
-          {'title': 'Kathakali Performance', 'desc': 'Traditional Kerala dance drama performance', 'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=900&h=600&fit=crop', 'baseCost': 800},
-          {'title': 'Vembanad Lake Sunset', 'desc': 'Peaceful sunset cruise on Kerala\'s largest lake', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop', 'baseCost': 1200},
-          {'title': 'Ayurvedic Spa Treatment', 'desc': 'Traditional Kerala massage and wellness therapy', 'image': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&h=600&fit=crop', 'baseCost': 2000},
-        ],
-      },
-      'rajasthan': {
-        'morning': [
-          {'title': 'Amber Fort Elephant Ride', 'desc': 'Majestic elephant ride up to Amber Fort, Jaipur', 'image': 'https://images.unsplash.com/photo-1477587458883-47145ed94245?w=900&h=600&fit=crop', 'baseCost': 1500},
-          {'title': 'City Palace Jaipur Tour', 'desc': 'Explore royal palace complex with museums', 'image': 'https://images.unsplash.com/photo-1539650116574-75c0c6d73f6e?w=900&h=600&fit=crop', 'baseCost': 600},
-          {'title': 'Mehrangarh Fort Jodhpur', 'desc': 'Imposing fort with panoramic views of Blue City', 'image': 'https://images.unsplash.com/photo-1477587458883-47145ed94245?w=900&h=600&fit=crop', 'baseCost': 800},
-        ],
-        'afternoon': [
-          {'title': 'Rajasthani Cooking Class', 'desc': 'Learn to make dal baati churma and other specialties', 'image': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=900&h=600&fit=crop', 'baseCost': 1200},
-          {'title': 'Udaipur Lake Palace Boat', 'desc': 'Boat ride to the famous Lake Palace on Pichola', 'image': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=900&h=600&fit=crop', 'baseCost': 2000},
-          {'title': 'Jaipur Bazaar Shopping', 'desc': 'Shop for textiles, jewelry and handicrafts', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop', 'baseCost': 1000},
-        ],
-        'evening': [
-          {'title': 'Desert Safari Jaisalmer', 'desc': 'Camel safari with cultural program and dinner', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop', 'baseCost': 2500},
-          {'title': 'Rajasthani Folk Dance', 'desc': 'Traditional Ghoomar and Kalbeliya performances', 'image': 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=900&h=600&fit=crop', 'baseCost': 1000},
-          {'title': 'Rooftop Dining Udaipur', 'desc': 'Royal dining with lake and palace views', 'image': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&h=600&fit=crop', 'baseCost': 1800},
-        ],
-      },
-      'mumbai': {
-        'morning': [
-          {'title': 'Gateway of India Walk', 'desc': 'Iconic monument with harbor views and boat rides', 'image': 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?w=900&h=600&fit=crop', 'baseCost': 300},
-          {'title': 'Elephanta Caves Tour', 'desc': 'Ancient rock-cut temples on Elephanta Island', 'image': 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=900&h=600&fit=crop', 'baseCost': 800},
-          {'title': 'Crawford Market Visit', 'desc': 'Historic market for fruits, spices and souvenirs', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop', 'baseCost': 400},
-        ],
-        'afternoon': [
-          {'title': 'Mumbai Street Food Tour', 'desc': 'Taste vada pav, pav bhaji and Mumbai chaat', 'image': 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=900&h=600&fit=crop', 'baseCost': 800},
-          {'title': 'Bollywood Studio Tour', 'desc': 'Behind-the-scenes look at film city studios', 'image': 'https://images.unsplash.com/photo-1554907984-15263bfd63bd?w=900&h=600&fit=crop', 'baseCost': 1500},
-          {'title': 'Marine Drive Walk', 'desc': 'Stroll along the Queen\'s Necklace promenade', 'image': 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?w=900&h=600&fit=crop', 'baseCost': 200},
-        ],
-        'evening': [
-          {'title': 'Juhu Beach Sunset', 'desc': 'Popular beach with street food and sunset views', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop', 'baseCost': 500},
-          {'title': 'Colaba Causeway Shopping', 'desc': 'Trendy shopping street with cafes and boutiques', 'image': 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?w=900&h=600&fit=crop', 'baseCost': 1000},
-          {'title': 'Rooftop Bar Experience', 'desc': 'Skyline views with craft cocktails and dining', 'image': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&h=600&fit=crop', 'baseCost': 2000},
-        ],
-      },
-      'delhi': {
-        'morning': [
-          {'title': 'Red Fort Exploration', 'desc': 'Mughal fortress with museums and gardens', 'image': 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=900&h=600&fit=crop', 'baseCost': 500},
-          {'title': 'Chandni Chowk Rickshaw', 'desc': 'Cycle rickshaw tour through Old Delhi bazaars', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop', 'baseCost': 600},
-          {'title': 'India Gate Morning Walk', 'desc': 'War memorial with gardens and morning joggers', 'image': 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=900&h=600&fit=crop', 'baseCost': 200},
-        ],
-        'afternoon': [
-          {'title': 'Delhi Street Food Tour', 'desc': 'Taste paranthas, chaat and kulfi in Old Delhi', 'image': 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=900&h=600&fit=crop', 'baseCost': 800},
-          {'title': 'Qutub Minar Visit', 'desc': 'UNESCO World Heritage minaret and complex', 'image': 'https://images.unsplash.com/photo-1587474260584-136574528ed5?w=900&h=600&fit=crop', 'baseCost': 400},
-          {'title': 'Humayun\'s Tomb Tour', 'desc': 'Precursor to Taj Mahal with Mughal gardens', 'image': 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=900&h=600&fit=crop', 'baseCost': 500},
-        ],
-        'evening': [
-          {'title': 'Jama Masjid Sunset', 'desc': 'Largest mosque in India with minaret climb', 'image': 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=900&h=600&fit=crop', 'baseCost': 300},
-          {'title': 'Connaught Place Shopping', 'desc': 'Central Delhi shopping and dining hub', 'image': 'https://images.unsplash.com/photo-1513475382585-d06e58bcb0e0?w=900&h=600&fit=crop', 'baseCost': 1200},
-          {'title': 'Hauz Khas Village', 'desc': 'Trendy area with cafes, bars and art galleries', 'image': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&h=600&fit=crop', 'baseCost': 1500},
-        ],
-      },
-      'himachal': {
-        'morning': [
-          {'title': 'Rohtang Pass Adventure', 'desc': 'High altitude pass with snow activities and views', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop&q=himachal+rohtang+pass+snow+mountains', 'baseCost': 2000},
-          {'title': 'Manali Temple Tour', 'desc': 'Visit Hadimba Devi and Manu temples', 'image': 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=900&h=600&fit=crop&q=himachal+manali+hadimba+temple', 'baseCost': 400},
-          {'title': 'Shimla Mall Road Walk', 'desc': 'Colonial architecture and mountain shopping', 'image': 'https://images.unsplash.com/photo-1539650116574-75c0c6d73f6e?w=900&h=600&fit=crop&q=himachal+shimla+mall+road+colonial', 'baseCost': 300},
-        ],
-        'afternoon': [
-          {'title': 'Solang Valley Activities', 'desc': 'Paragliding, zorbing and cable car rides', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop&q=himachal+solang+valley+paragliding+mountains', 'baseCost': 2500},
-          {'title': 'Kullu River Rafting', 'desc': 'White water rafting on Beas river', 'image': 'https://images.unsplash.com/photo-1544551763-46a013bb70d5?w=900&h=600&fit=crop&q=himachal+kullu+river+rafting+beas', 'baseCost': 1800},
-          {'title': 'Apple Orchard Visit', 'desc': 'Tour apple farms and taste fresh mountain apples', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop&q=himachal+apple+orchard+mountains', 'baseCost': 600},
-        ],
-        'evening': [
-          {'title': 'Kasauli Sunset Point', 'desc': 'Panoramic Himalayan views from hilltop', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop&q=himachal+kasauli+sunset+himalayan+mountains', 'baseCost': 400},
-          {'title': 'Manali Cafe Hopping', 'desc': 'Cozy mountain cafes with live music', 'image': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&h=600&fit=crop&q=himachal+manali+cafe+mountains', 'baseCost': 1000},
-          {'title': 'Bonfire & Stargazing', 'desc': 'Mountain bonfire with clear night sky views', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop&q=himachal+bonfire+stargazing+mountains', 'baseCost': 800},
-        ],
-      },
-      'karnataka': {
-        'morning': [
-          {'title': 'Hampi Ruins Exploration', 'desc': 'Ancient Vijayanagara Empire ruins and temples', 'image': 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?w=900&h=600&fit=crop&q=karnataka+hampi+ruins+temple', 'baseCost': 600},
-          {'title': 'Mysore Palace Tour', 'desc': 'Magnificent royal palace with intricate architecture', 'image': 'https://images.unsplash.com/photo-1582510003544-4d00b7f74220?w=900&h=600&fit=crop&q=karnataka+mysore+palace+royal', 'baseCost': 500},
-          {'title': 'Bangalore Garden City Walk', 'desc': 'Explore Lalbagh and Cubbon Park gardens', 'image': 'https://images.unsplash.com/photo-1539650116574-75c0c6d73f6e?w=900&h=600&fit=crop&q=karnataka+bangalore+lalbagh+garden', 'baseCost': 300},
-        ],
-        'afternoon': [
-          {'title': 'Coorg Coffee Plantation', 'desc': 'Tour coffee estates and learn about coffee processing', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop&q=karnataka+coorg+coffee+plantation', 'baseCost': 1200},
-          {'title': 'Badami Cave Temples', 'desc': 'Ancient rock-cut cave temples with stunning carvings', 'image': 'https://images.unsplash.com/photo-1564507592333-c60657eea523?w=900&h=600&fit=crop&q=karnataka+badami+cave+temples', 'baseCost': 800},
-          {'title': 'Udupi Temple & Cuisine', 'desc': 'Visit Krishna temple and taste authentic Udupi food', 'image': 'https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=900&h=600&fit=crop&q=karnataka+udupi+temple+south+indian+food', 'baseCost': 700},
-        ],
-        'evening': [
-          {'title': 'Bangalore Pub Culture', 'desc': 'Experience the vibrant nightlife and craft beer scene', 'image': 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&h=600&fit=crop&q=karnataka+bangalore+pub+nightlife', 'baseCost': 1500},
-          {'title': 'Hampi Sunset at Matanga Hill', 'desc': 'Panoramic sunset views over ancient boulder landscape', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop&q=karnataka+hampi+sunset+matanga+hill', 'baseCost': 400},
-          {'title': 'Mysore Silk Weaving Demo', 'desc': 'Watch traditional silk weaving and shop for sarees', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop&q=karnataka+mysore+silk+weaving', 'baseCost': 800},
-        ],
-      },
-    };
-    
-    return activitiesMap[destination] ?? _getDefaultActivities();
-  }
-  
-  Map<String, int> _getDestinationBaseCosts(String destination) {
-    final costMap = {
-      'goa': {'hotel': 3500, 'transport': 2500, 'experiences': 2000, 'food': 1200},
-      'kerala': {'hotel': 4000, 'transport': 3000, 'experiences': 2500, 'food': 1000},
-      'rajasthan': {'hotel': 5000, 'transport': 3500, 'experiences': 3000, 'food': 1500},
-      'mumbai': {'hotel': 6000, 'transport': 2000, 'experiences': 2500, 'food': 1800},
-      'delhi': {'hotel': 4500, 'transport': 2200, 'experiences': 2200, 'food': 1600},
-      'himachal': {'hotel': 3000, 'transport': 4000, 'experiences': 3500, 'food': 1100},
-      'karnataka': {'hotel': 3800, 'transport': 2800, 'experiences': 2300, 'food': 1300},
-    };
-    return costMap[destination] ?? {'hotel': 4000, 'transport': 3000, 'experiences': 2500, 'food': 1400};
-  }
-  
   String _getActivityStartTime(String timeSlot, int day) {
     final times = {
       'morning': ['8:30 AM', '9:00 AM', '9:30 AM'],
@@ -3174,29 +2919,6 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
     if (titleLower.contains('class') || titleLower.contains('performance') || titleLower.contains('show')) return 90;
     if (titleLower.contains('sunset') || titleLower.contains('cafe') || titleLower.contains('bar')) return 150;
     return 150;
-  }
-  
-  Map<String, List<Map<String, dynamic>>> _getDefaultActivities() {
-    return {
-      'morning': [
-        {'title': 'Heritage Walk', 'desc': 'Guided tour through historic lanes and monuments', 'image': 'https://images.unsplash.com/photo-1539650116574-75c0c6d73f6e?w=900&h=600&fit=crop', 'baseCost': 600},
-      ],
-      'afternoon': [
-        {'title': 'Local Market Tour', 'desc': 'Vibrant bazaar with spices, textiles and crafts', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop', 'baseCost': 800},
-      ],
-      'evening': [
-        {'title': 'Sunset Point', 'desc': 'Breathtaking views from hilltop or scenic location', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop', 'baseCost': 500},
-      ],
-    };
-  }
-  
-  Map<String, dynamic> _getDefaultActivity(String timeOfDay) {
-    final defaults = {
-      'morning': {'title': 'Heritage Walk', 'desc': 'Guided tour through historic lanes', 'image': 'https://images.unsplash.com/photo-1539650116574-75c0c6d73f6e?w=900&h=600&fit=crop', 'baseCost': 600},
-      'afternoon': {'title': 'Local Market Tour', 'desc': 'Explore local markets and crafts', 'image': 'https://images.unsplash.com/photo-1578662996442-48f60103fc96?w=900&h=600&fit=crop', 'baseCost': 800},
-      'evening': {'title': 'Sunset Point', 'desc': 'Beautiful sunset views', 'image': 'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=900&h=600&fit=crop', 'baseCost': 500},
-    };
-    return defaults[timeOfDay] ?? defaults['morning']!;
   }
   
   Map<String, List<Map<String, dynamic>>> _filterActivitiesByThemes(Map<String, List<Map<String, dynamic>>> activities, Set<String> themes) {
@@ -3261,33 +2983,6 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
     return filtered;
   }
   
-  double _getCostMultiplier() {
-    double multiplier = 1.0;
-    
-    // Adjust based on group size
-    if (widget.prefs.people > 4) {
-      multiplier *= 0.85; // Group discount
-    } else if (widget.prefs.people == 1) {
-      multiplier *= 1.2; // Solo travel premium
-    }
-    
-    // Adjust based on budget
-    if (widget.prefs.budget > 100000) {
-      multiplier *= 1.5; // Luxury experiences
-    } else if (widget.prefs.budget < 20000) {
-      multiplier *= 0.7; // Budget-friendly options
-    }
-    
-    // Adjust based on themes
-    if (widget.prefs.themes.contains('Adventure')) {
-      multiplier *= 1.3; // Adventure activities cost more
-    }
-    if (widget.prefs.themes.contains('Relaxation')) {
-      multiplier *= 1.2; // Spa and wellness premium
-    }
-    
-    return multiplier;
-  }
   
   String _getDifficulty(String title) {
     final titleLower = title.toLowerCase();
@@ -3440,7 +3135,7 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
                             ElevatedButton.icon(
                               onPressed: () {
                                 HapticFeedback.mediumImpact();
-                                _applySmartAdjustMock();
+                                _showSmartAdjustDialog();
                               }, 
                               icon: const Icon(Icons.auto_fix_high), 
                               label: const Text('Smart Adjust'),
@@ -3661,122 +3356,183 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
     return Card(
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Column(children: [
-        // Image section - slightly reduced height for better proportion
-        SizedBox(
-          height: 100,
-          child: CachedNetworkImage(
-            imageUrl: item.image,
-            fit: BoxFit.cover,
-            width: double.infinity,
-            placeholder: (context, url) => Shimmer.fromColors(
-              baseColor: Colors.grey[800]!,
-              highlightColor: Colors.grey[600]!,
-              child: Container(height: 100, color: Colors.grey[800]),
-            ),
-            errorWidget: (context, url, error) => Container(
-              height: 100,
-              color: Colors.grey[800],
-              child: const Icon(Icons.image_not_supported, color: Colors.white54),
-            ),
-          ),
-        ),
-        // Content section - more compact padding
-        Padding(
-          padding: const EdgeInsets.all(10.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Title and cost row
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Text(
-                      item.title,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title and cost row
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    item.title,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                   ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  ),
+                  child: Text(
+                    '₹${item.approxCost}',
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Colors.green),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            
+            // Time and duration info
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.schedule, color: Colors.blue, size: 16),
                   const SizedBox(width: 8),
+                  Text(
+                    '${item.startTime} - ${item.endTime}',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const Spacer(),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
+                      color: Colors.orange.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.green.withOpacity(0.3)),
                     ),
                     child: Text(
-                      '₹${item.approxCost}',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 11, color: Colors.green),
+                      '${item.duration} min',
+                      style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
-              // Description
-              Text(
-                item.description,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 11, color: Colors.white70),
-              ),
-              const SizedBox(height: 8),
-              // Bottom row with rating and additional info
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Rating
+            ),
+            const SizedBox(height: 12),
+            
+            // Description
+            Text(
+              item.description,
+              style: const TextStyle(fontSize: 13, color: Colors.white70, height: 1.4),
+            ),
+            const SizedBox(height: 12),
+            
+            // Additional details row
+            Row(
+              children: [
+                // Difficulty
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _getDifficultyColor(item.difficulty).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: _getDifficultyColor(item.difficulty).withOpacity(0.3)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.trending_up, color: _getDifficultyColor(item.difficulty), size: 12),
+                      const SizedBox(width: 4),
+                      Text(
+                        item.difficulty,
+                        style: TextStyle(color: _getDifficultyColor(item.difficulty), fontSize: 11, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                
+                // Category icon
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.purple.withOpacity(0.3)),
+                  ),
+                  child: Icon(
+                    _getCategoryIcon(item.title),
+                    size: 16,
+                    color: Colors.purple,
+                  ),
+                ),
+                const Spacer(),
+                
+                // Booking indicator
+                if (item.hasBooking)
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: Colors.amber.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: Colors.amber.withOpacity(0.3)),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        RatingBarIndicator(
-                          rating: item.rating,
-                          itemBuilder: (context, index) => const Icon(Icons.star, color: Colors.amber),
-                          itemCount: 5,
-                          itemSize: 10.0,
+                        Icon(Icons.event_available, color: Colors.amber, size: 12),
+                        SizedBox(width: 4),
+                        Text(
+                          'Booking Required',
+                          style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(width: 3),
-                        Text('${item.rating.toStringAsFixed(1)}', 
-                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 9)),
                       ],
                     ),
                   ),
-                  // Activity type and booking info
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (item.hasBooking)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(4),
+              ],
+            ),
+            
+            // Insider tip if available
+            if (item.insiderTip.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.withOpacity(0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.lightbulb, color: Colors.amber, size: 14),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Insider Tip',
+                            style: TextStyle(color: Colors.amber, fontWeight: FontWeight.bold, fontSize: 11),
                           ),
-                          child: const Icon(Icons.event_available, size: 10, color: Colors.orange),
-                        ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        _getCategoryIcon(item.title),
-                        size: 14,
-                        color: Colors.white60,
+                          const SizedBox(height: 4),
+                          Text(
+                            item.insiderTip,
+                            style: const TextStyle(color: Colors.amber, fontSize: 11, height: 1.3),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ],
-          ),
+          ],
         ),
-      ]),
+      ),
     ).animate().scale(delay: 100.ms).fadeIn();
   }
   
@@ -4508,27 +4264,454 @@ ${days.take(2).map((d) => '• ${d.items.first.title}').join('\n')}
     );
   }
 
-  void _applySmartAdjustMock() {
-    setState(() {
-      smartAdjusted = true;
-      if (days.isNotEmpty) {
-        final day = days[0];
-        day.items[2] = ItineraryItem(
-          id: 'museum_${Random().nextInt(1000)}',
-          title: 'Evening • City Museum', 
-          description: 'Indoor museum with exhibits', 
-          image: 'https://picsum.photos/seed/museum/900/600', 
-          rating: 4.4, 
-          reviews: 120, 
-          approxCost: 500, 
-          startTime: '18:00', 
-          endTime: '20:30', 
-          duration: 150,
-          currentPrice: 500.0,
-          lastPriceUpdate: DateTime.now(),
+  /// Show Smart Adjust dialog for textual instructions
+  void _showSmartAdjustDialog() {
+    final TextEditingController instructionController = TextEditingController();
+    bool isLoading = false;
+    int currentCharCount = 0;
+    const int minChars = 20;
+    const int maxChars = 256;
+    String? activeRequestId;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                constraints: const BoxConstraints(maxWidth: 500, maxHeight: 450),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(Icons.auto_fix_high, color: Colors.deepOrangeAccent, size: 28),
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Smart Adjust',
+                          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                        ),
+                        const Spacer(),
+                        if (!isLoading)
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Describe what you\'d like to adjust in your itinerary:',
+                      style: TextStyle(fontSize: 16, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: instructionController,
+                      maxLines: 4,
+                      maxLength: maxChars,
+                      enabled: !isLoading,
+                      onChanged: (text) {
+                        setDialogState(() {
+                          currentCharCount = text.length;
+                        });
+                      },
+                      decoration: InputDecoration(
+                        hintText: 'e.g., "Replace outdoor activities on day 2 with indoor alternatives", "Add more cultural experiences", "Make the schedule less packed"...',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        filled: true,
+                        fillColor: Colors.grey.withOpacity(0.1),
+                        counterText: '', // Hide default counter
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Minimum $minChars characters required',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: currentCharCount < minChars ? Colors.red : Colors.grey,
+                          ),
+                        ),
+                        Text(
+                          '$currentCharCount/$maxChars',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: currentCharCount > maxChars ? Colors.red : Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (isLoading) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                        ),
+                        child: Row(
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 12),
+                            const Expanded(
+                              child: Text(
+                                'Processing your request... This may take up to 90 seconds.',
+                                style: TextStyle(fontSize: 12, color: Colors.blue),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (isLoading) ...[
+                          TextButton.icon(
+                            onPressed: () {
+                              if (activeRequestId != null) {
+                                AuthenticatedHttpClient().cancelRequest(activeRequestId!);
+                                setDialogState(() {
+                                  isLoading = false;
+                                  activeRequestId = null;
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Request cancelled'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.cancel, size: 18),
+                            label: const Text('Cancel Request'),
+                          ),
+                        ] else ...[
+                          TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 12),
+                          ElevatedButton.icon(
+                            onPressed: () async {
+                              final text = instructionController.text.trim();
+                              
+                              if (text.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Please enter your adjustment instructions'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              
+                              if (text.length < minChars) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Instructions must be at least $minChars characters long'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              
+                              if (text.length > maxChars) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Instructions must be no more than $maxChars characters long'),
+                                    backgroundColor: Colors.orange,
+                                  ),
+                                );
+                                return;
+                              }
+                              
+                              // Generate request ID for cancellation
+                              activeRequestId = 'smart_adjust_${DateTime.now().millisecondsSinceEpoch}';
+                              setDialogState(() => isLoading = true);
+                              
+                              try {
+                                await _applySmartAdjust(text, activeRequestId!);
+                                Navigator.of(context).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Smart Adjust applied successfully!'),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              } catch (e) {
+                                setDialogState(() {
+                                  isLoading = false;
+                                  activeRequestId = null;
+                                });
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Failed to apply adjustments: $e'),
+                                    backgroundColor: Colors.red,
+                                  ),
+                                );
+                              }
+                            },
+                            icon: const Icon(Icons.auto_fix_high),
+                            label: const Text('Apply Adjustments'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.deepOrangeAccent,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
+      },
+    );
+  }
+
+  /// Apply smart adjustments using the API
+  Future<void> _applySmartAdjust(String instruction, String requestId) async {
+    final AuthenticatedHttpClient httpClient = AuthenticatedHttpClient();
+    
+    try {
+      // Use original API response data if available, otherwise fall back to reconstructed data
+      Map<String, dynamic> itineraryData;
+      String itineraryIdValue;
+      
+      if (widget.apiResponse != null && widget.apiResponse!['itinerary'] != null) {
+        // Use the original itinerary object from the /plantrip API response
+        itineraryData = widget.apiResponse!['itinerary'] as Map<String, dynamic>;
+        itineraryIdValue = widget.apiResponse!['itineraryId'] as String? ?? 
+                          itineraryData['itineraryId'] as String? ?? 
+                          'itin_${DateTime.now().millisecondsSinceEpoch}';
+      } else {
+        // Fallback: reconstruct from current state
+        itineraryData = {
+          'itineraryId': 'itin_${DateTime.now().millisecondsSinceEpoch}',
+          'days': days.map((day) => {
+            'dayIndex': day.dayNumber,
+            'activities': day.items.map((item) => {
+              'poiId': item.id,
+              'title': item.title,
+              'description': item.description,
+              'cost': item.approxCost,
+              'timeOfDay': _getTimeOfDayFromStartTime(item.startTime),
+              'category': _getCategoryFromItem(item),
+              'durationMins': item.duration,
+            }).toList(),
+          }).toList(),
+        };
+        itineraryIdValue = itineraryData['itineraryId'] as String;
       }
-    });
+
+      // Serialize request body in the format expected by the API
+      final requestBody = {
+        'sessionID': await _getSessionId(),
+        'userRequest': instruction,
+        'itinerary': itineraryData,
+        'itineraryId': itineraryIdValue,
+      };
+
+      // Make API call to smart adjust endpoint with cancellation support
+      final response = await httpClient.apiPost(
+        ApiConfig.smartAdjustEndpoint,
+        body: requestBody,
+        requestId: requestId,
+      );
+
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        
+        // Smart adjust API now directly returns the itinerary object (same format as /plantrip)
+        // No need to check for 'success' wrapper - the response is the itinerary itself
+        _updateItineraryFromApi(responseData);
+        
+        setState(() {
+          smartAdjusted = true;
+        });
+      } else {
+        throw Exception('Server error: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Smart Adjust error: $e');
+      rethrow;
+    }
+  }
+
+  /// Get session ID for unauthenticated users or fallback
+  Future<String> _getSessionId() async {
+    try {
+      // Try to get user profile first (for authenticated users)
+      final userProfile = await WebAuthService().getUserProfile();
+      if (userProfile != null && userProfile['uid'] != null) {
+        return userProfile['uid'] as String;
+      }
+    } catch (e) {
+      print('Could not get authenticated user ID: $e');
+    }
+    
+    // For unauthenticated users, generate or retrieve session ID
+    // This could be stored in localStorage or generated as UUID
+    return 'session_${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  /// Map itinerary item to activity category
+  String _getCategoryFromItem(ItineraryItem item) {
+    final title = item.title.toLowerCase();
+    final description = item.description.toLowerCase();
+    
+    if (title.contains('transport') || title.contains('arrival') || title.contains('departure') || 
+        title.contains('airport') || title.contains('transfer')) {
+      return 'transport';
+    } else if (title.contains('museum') || title.contains('palace') || title.contains('temple') || 
+               title.contains('heritage') || title.contains('synagogue') || description.contains('historic')) {
+      return 'heritage';
+    } else if (title.contains('beach') || title.contains('nature') || title.contains('cruise') || 
+               title.contains('backwater') || description.contains('natural')) {
+      return 'nature';
+    } else if (title.contains('dinner') || title.contains('lunch') || title.contains('food') || 
+               title.contains('restaurant') || description.contains('meal')) {
+      return 'food';
+    } else if (title.contains('dance') || title.contains('performance') || title.contains('cultural') || 
+               title.contains('spice') || description.contains('traditional')) {
+      return 'culture';
+    } else if (title.contains('adventure') || title.contains('trekking') || title.contains('climbing')) {
+      return 'adventure';
+    } else if (title.contains('nightlife') || title.contains('bar') || title.contains('club')) {
+      return 'nightlife';
+    } else {
+      return 'leisure';
+    }
+  }
+
+  /// Get time of day from start time
+  String _getTimeOfDayFromStartTime(String startTime) {
+    if (startTime.isEmpty) return 'morning';
+    
+    try {
+      final hour = int.parse(startTime.split(':')[0]);
+      if (hour >= 5 && hour < 12) return 'morning';
+      if (hour >= 12 && hour < 17) return 'afternoon';
+      if (hour >= 17 && hour < 21) return 'evening';
+      return 'night';
+    } catch (e) {
+      return 'morning';
+    }
+  }
+
+  /// Calculate total estimated cost
+  double _calculateTotalCost() {
+    double total = 0.0;
+    for (final day in days) {
+      for (final item in day.items) {
+        total += item.approxCost;
+      }
+    }
+    return total;
+  }
+
+  /// Update itinerary from API response
+  void _updateItineraryFromApi(Map<String, dynamic> adjustedItinerary) {
+    try {
+      // Update metadata
+      itineraryTitle = adjustedItinerary['title'] ?? itineraryTitle;
+      itineraryId = adjustedItinerary['itineraryId'] ?? itineraryId;
+      totalBudget = (adjustedItinerary['estimatedCost'] ?? totalBudget ?? 0.0).toDouble();
+      
+      // Extract destination from input
+      if (adjustedItinerary['input'] != null && adjustedItinerary['input']['destination'] != null) {
+        destination = adjustedItinerary['input']['destination']['name'] ?? destination;
+      }
+      
+      final adjustedDays = adjustedItinerary['days'] as List<dynamic>;
+      
+      // Update existing days with adjusted data
+      for (int i = 0; i < adjustedDays.length && i < days.length; i++) {
+        final dayData = adjustedDays[i] as Map<String, dynamic>;
+        final activities = dayData['activities'] as List<dynamic>;
+        
+        days[i].items = activities.map<ItineraryItem>((activityData) {
+          final activity = activityData as Map<String, dynamic>;
+          return ItineraryItem(
+            id: activity['poiId'] ?? '',
+            title: activity['title'] ?? '',
+            description: activity['description'] ?? '',
+            image: 'https://picsum.photos/seed/${activity['poiId']}/900/600', // Default image
+            rating: 4.0, // Default rating
+            reviews: 100, // Default reviews
+            approxCost: activity['cost'] ?? 0,
+            startTime: _convertTimeOfDayToTime(activity['timeOfDay'] ?? 'morning'),
+            endTime: _calculateEndTime(_convertTimeOfDayToTime(activity['timeOfDay'] ?? 'morning'), activity['durationMins'] ?? 60),
+            duration: activity['durationMins'] ?? 60,
+            difficulty: 'Easy', // Default difficulty
+            isAccessible: true, // Default accessibility
+            insiderTip: activity['safetyNote'] ?? '',
+            isOpen: true, // Default open status
+            crowdLevel: 'Moderate', // Default crowd level
+            localPhrases: [], // Default empty phrases
+            emergencyContact: '', // Default empty contact
+            hasBooking: activity['bookingRequired'] ?? false,
+            travelTimeToNext: 15, // Default travel time
+            currentPrice: (activity['cost'] ?? 0.0).toDouble(),
+            lastPriceUpdate: DateTime.now(),
+            isCurrentlyOpen: true, // Default currently open
+            alternatives: [], // Default empty alternatives
+            location: null, // Default no location
+          );
+        }).toList();
+      }
+    } catch (e) {
+      print('Error updating itinerary from API: $e');
+      throw Exception('Failed to parse adjusted itinerary data');
+    }
+  }
+
+  /// Convert time of day string to HH:MM format
+  String _convertTimeOfDayToTime(String timeOfDay) {
+    switch (timeOfDay.toLowerCase()) {
+      case 'morning':
+        return '09:00';
+      case 'afternoon':
+        return '14:00';
+      case 'evening':
+        return '18:00';
+      case 'night':
+        return '20:00';
+      default:
+        return '09:00';
+    }
+  }
+
+  /// Calculate end time based on start time and duration
+  String _calculateEndTime(String startTime, int durationMins) {
+    try {
+      final parts = startTime.split(':');
+      final hour = int.parse(parts[0]);
+      final minute = int.parse(parts[1]);
+      
+      final startDateTime = DateTime(2000, 1, 1, hour, minute);
+      final endDateTime = startDateTime.add(Duration(minutes: durationMins));
+      
+      return '${endDateTime.hour.toString().padLeft(2, '0')}:${endDateTime.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return startTime; // Return start time if calculation fails
+    }
   }
 
   void _mockShare() {
@@ -5380,7 +5563,7 @@ class _AIAssistantState extends State<AIAssistant> with TickerProviderStateMixin
 
   Future<String> _getAIResponse(String message) async {
     if (!_hasApiKey || _geminiService == null) {
-      return _getMockResponse(message);
+      return "🤖 I'm here to help with your travel planning! Please configure the API key in settings for personalized assistance.";
     }
     
     try {
@@ -5398,43 +5581,10 @@ class _AIAssistantState extends State<AIAssistant> with TickerProviderStateMixin
         budget: budget, 
         conversationHistory: conversationHistory);
     } catch (e) {
-      return _getMockResponse(message);
+      return "I'm having trouble connecting to the AI service. Please check your internet connection and try again.";
     }
   }
   
-  String _getMockResponse(String message) {
-    final lowerMessage = message.toLowerCase();
-    final responses = <String>[];
-    
-    if (lowerMessage.contains('weather')) {
-      responses.addAll([
-        '🌤️ Current weather looks great! Sunny, 28°C with light breeze. Perfect for outdoor activities!',
-        '⛅ Partly cloudy today with 25°C. Great weather for sightseeing!',
-        '🌧️ Light rain expected tomorrow. Pack an umbrella and plan indoor activities!'
-      ]);
-    } else if (lowerMessage.contains('restaurant') || lowerMessage.contains('food') || lowerMessage.contains('eat')) {
-      responses.addAll([
-        '🍽️ Try local street food! I recommend visiting the main market area for authentic flavors.',
-        '🥘 For vegetarian options, check out traditional thali restaurants - great value and variety!',
-        '🍛 Don\'t miss the local specialties! Ask your hotel for nearby family-run restaurants.'
-      ]);
-    } else if (lowerMessage.contains('budget') || lowerMessage.contains('cost') || lowerMessage.contains('money')) {
-      responses.addAll([
-        '💰 Budget tip: Use local buses and trains instead of taxis. You\'ll save 60-70%!',
-        '💸 Book accommodations in advance for better rates. Consider homestays for authentic experiences!',
-        '🏪 Shop at local markets and avoid tourist areas for better prices on souvenirs.'
-      ]);
-    } else {
-      responses.addAll([
-        '🤖 I\'m here to help with your travel planning! Ask me about destinations, food, budget, or activities.',
-        '🌟 I can assist with weather updates, restaurant recommendations, budget tips, and local attractions!',
-        '🎯 Try asking about specific destinations, local food, or travel tips for personalized advice!'
-      ]);
-    }
-    
-    return responses.isNotEmpty ? responses[DateTime.now().millisecond % responses.length] : 
-           '🤖 I\'m here to help with your travel planning! Ask me about destinations, food, budget, or activities.';
-  }
   
   void _showAssistantInfo() {
     showDialog(

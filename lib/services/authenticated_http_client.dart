@@ -1,5 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:async';
+import 'dart:io';
 import '../services/web_auth_service.dart';
 import '../services/session_service.dart';
 import '../config/api_config.dart';
@@ -11,8 +13,17 @@ class AuthenticatedHttpClient {
   factory AuthenticatedHttpClient() => _instance;
   AuthenticatedHttpClient._internal();
 
+  // Timeout configurations for different operations
+  static const Duration _defaultTimeout = Duration(seconds: 120);
+  static const Duration _planTripTimeout = Duration(seconds: 120); // 120 seconds for trip planning
+  static const Duration _smartAdjustTimeout = Duration(seconds: 120); // 120 seconds for smart adjust
+  static const Duration _chatTimeout = Duration(seconds: 120); // 120 seconds for chat
+
   final WebAuthService _authService = WebAuthService();
   final SessionService _sessionService = SessionService();
+  
+  // Map to store active requests for cancellation
+  final Map<String, Completer<http.Response>> _activeRequests = {};
 
   /// Make authenticated/guest GET request
   Future<http.Response> get(
@@ -20,13 +31,16 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     final finalHeaders = await _buildHeaders(headers, includeAuth, forceGuest);
+    final requestTimeout = timeout ?? _defaultTimeout;
     
     try {
-      final response = await http.get(Uri.parse(url), headers: finalHeaders);
+      final response = await http.get(Uri.parse(url), headers: finalHeaders)
+          .timeout(requestTimeout);
       return await _handleTokenExpiry(response, () => 
-        http.get(Uri.parse(url), headers: finalHeaders)
+        http.get(Uri.parse(url), headers: finalHeaders).timeout(requestTimeout)
       );
     } catch (e) {
       print('GET request error: $e');
@@ -34,59 +48,100 @@ class AuthenticatedHttpClient {
     }
   }
 
-  /// Make authenticated/guest POST request
+  /// Make authenticated/guest POST request with cancellation support
   Future<http.Response> post(
     String url, {
     Map<String, String>? headers,
     Object? body,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
+    String? requestId,
   }) async {
     final finalHeaders = await _buildHeaders(headers, includeAuth, forceGuest);
     final requestBody = await _buildBody(body, includeAuth, forceGuest);
+    final requestTimeout = timeout ?? _getTimeoutForUrl(url);
+    
+    // Generate request ID if not provided
+    final id = requestId ?? DateTime.now().millisecondsSinceEpoch.toString();
     
     try {
-      final response = await http.post(
+      // Create a completer for this request
+      final completer = Completer<http.Response>();
+      _activeRequests[id] = completer;
+      
+      // Start the actual HTTP request
+      final httpRequest = http.post(
         Uri.parse(url), 
         headers: finalHeaders,
         body: requestBody,
       );
+      
+      // Set up timeout and cancellation
+      Timer? timeoutTimer;
+      timeoutTimer = Timer(requestTimeout, () {
+        if (!completer.isCompleted) {
+          _activeRequests.remove(id);
+          completer.completeError(TimeoutException('Request timed out after ${requestTimeout.inSeconds} seconds', requestTimeout));
+          timeoutTimer?.cancel();
+        }
+      });
+      
+      // Execute the request
+      httpRequest.then((response) {
+        timeoutTimer?.cancel();
+        if (!completer.isCompleted) {
+          _activeRequests.remove(id);
+          completer.complete(response);
+        }
+      }).catchError((error) {
+        timeoutTimer?.cancel();
+        if (!completer.isCompleted) {
+          _activeRequests.remove(id);
+          completer.completeError(error);
+        }
+      });
+      
+      final response = await completer.future;
       return await _handleTokenExpiry(response, () => 
-        http.post(
-          Uri.parse(url), 
-          headers: finalHeaders,
-          body: requestBody,
-        )
+        post(url, headers: headers, body: body, includeAuth: includeAuth, forceGuest: forceGuest, timeout: timeout)
       );
     } catch (e) {
+      _activeRequests.remove(id);
+      if (e is TimeoutException) {
+        print('POST request timed out: $url after ${requestTimeout.inSeconds} seconds');
+        throw TimeoutException('Server did not respond within ${requestTimeout.inSeconds} seconds. Please try again.', requestTimeout);
+      }
       print('POST request error: $e');
       rethrow;
     }
   }
 
   /// Make authenticated/guest PUT request
-  Future<http.Response> put(
+  Future<http.Response> putRequest(
     String url, {
     Map<String, String>? headers,
     Object? body,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     final finalHeaders = await _buildHeaders(headers, includeAuth, forceGuest);
     final requestBody = await _buildBody(body, includeAuth, forceGuest);
+    final requestTimeout = timeout ?? _defaultTimeout;
     
     try {
       final response = await http.put(
         Uri.parse(url), 
         headers: finalHeaders,
         body: requestBody,
-      );
+      ).timeout(requestTimeout);
       return await _handleTokenExpiry(response, () => 
         http.put(
           Uri.parse(url), 
           headers: finalHeaders,
           body: requestBody,
-        )
+        ).timeout(requestTimeout)
       );
     } catch (e) {
       print('PUT request error: $e');
@@ -95,18 +150,21 @@ class AuthenticatedHttpClient {
   }
 
   /// Make authenticated/guest DELETE request
-  Future<http.Response> delete(
+  Future<http.Response> deleteRequest(
     String url, {
     Map<String, String>? headers,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     final finalHeaders = await _buildHeaders(headers, includeAuth, forceGuest);
+    final requestTimeout = timeout ?? _defaultTimeout;
     
     try {
-      final response = await http.delete(Uri.parse(url), headers: finalHeaders);
+      final response = await http.delete(Uri.parse(url), headers: finalHeaders)
+          .timeout(requestTimeout);
       return await _handleTokenExpiry(response, () => 
-        http.delete(Uri.parse(url), headers: finalHeaders)
+        http.delete(Uri.parse(url), headers: finalHeaders).timeout(requestTimeout)
       );
     } catch (e) {
       print('DELETE request error: $e');
@@ -244,28 +302,44 @@ class AuthenticatedHttpClient {
     return response;
   }
 
+  /// Get appropriate timeout for specific URLs
+  Duration _getTimeoutForUrl(String url) {
+    if (url.contains('/plantrip') || url.contains('/plan-trip')) {
+      return _planTripTimeout;
+    } else if (url.contains('/smartadjust') || url.contains('/smart-adjust')) {
+      return _smartAdjustTimeout;
+    } else if (url.contains('/chat')) {
+      return _chatTimeout;
+    }
+    return _defaultTimeout;
+  }
+
   /// Helper method for API requests with base URL
   Future<http.Response> apiGet(
     String endpoint, {
     Map<String, String>? headers,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     return get(
       '${ApiConfig.baseUrl}$endpoint',
       headers: headers,
       includeAuth: includeAuth,
       forceGuest: forceGuest,
+      timeout: timeout,
     );
   }
 
-  /// Helper method for API POST requests with base URL
+  /// Helper method for API POST requests with base URL and cancellation support
   Future<http.Response> apiPost(
     String endpoint, {
     Map<String, String>? headers,
     Object? body,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
+    String? requestId,
   }) async {
     return post(
       '${ApiConfig.baseUrl}$endpoint',
@@ -273,8 +347,33 @@ class AuthenticatedHttpClient {
       body: body,
       includeAuth: includeAuth,
       forceGuest: forceGuest,
+      timeout: timeout,
+      requestId: requestId,
     );
   }
+
+  /// Cancel a specific request by ID
+  void cancelRequest(String requestId) {
+    final completer = _activeRequests[requestId];
+    if (completer != null && !completer.isCompleted) {
+      _activeRequests.remove(requestId);
+      completer.completeError(const SocketException('Request cancelled by user'));
+    }
+  }
+
+  /// Cancel all active requests
+  void cancelAllRequests() {
+    final requestIds = List<String>.from(_activeRequests.keys);
+    for (final id in requestIds) {
+      cancelRequest(id);
+    }
+  }
+
+  /// Get count of active requests
+  int get activeRequestCount => _activeRequests.length;
+
+  /// Check if a specific request is active
+  bool isRequestActive(String requestId) => _activeRequests.containsKey(requestId);
 
   /// Helper method for API PUT requests with base URL
   Future<http.Response> apiPut(
@@ -283,13 +382,15 @@ class AuthenticatedHttpClient {
     Object? body,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
-    return put(
+    return putRequest(
       '${ApiConfig.baseUrl}$endpoint',
       headers: headers,
       body: body,
       includeAuth: includeAuth,
       forceGuest: forceGuest,
+      timeout: timeout,
     );
   }
 
@@ -299,12 +400,14 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
-    return delete(
+    return deleteRequest(
       '${ApiConfig.baseUrl}$endpoint',
       headers: headers,
       includeAuth: includeAuth,
       forceGuest: forceGuest,
+      timeout: timeout,
     );
   }
 

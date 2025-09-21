@@ -8,8 +8,8 @@ class HttpClient {
   HttpClient._internal();
 
   late http.Client _client;
-  static const Duration _timeout = Duration(seconds: 30);
-  static const Duration _connectionTimeout = Duration(seconds: 15);
+  static const Duration _timeout = Duration(seconds: 120);
+  static const Duration _connectionTimeout = Duration(seconds: 30);
 
   void initialize() {
     _client = http.Client();
