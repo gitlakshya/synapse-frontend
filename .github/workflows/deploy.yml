@@ -1,0 +1,65 @@
+name: Deploy to Firebase Hosting
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+    types: [ closed ]
+
+jobs:
+  build-and-deploy:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.35.4'
+        channel: 'stable'
+        cache: true
+        
+    - name: Get Dependencies
+      run: flutter pub get
+      
+    - name: Analyze Code
+      run: flutter analyze --no-fatal-infos
+      continue-on-error: true
+      
+    - name: Run Tests
+      run: flutter test
+      continue-on-error: true
+      
+    - name: Build Web Application
+      run: |
+        flutter build web --release --web-renderer html --dart-define=ENVIRONMENT=production
+        
+    - name: Deploy to Firebase Hosting
+      uses: FirebaseExtended/action-hosting-deploy@v0
+      with:
+        repoToken: ${{ secrets.GITHUB_TOKEN }}
+        firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CALCIUM_RATIO_472014_R9 }}
+        channelId: live
+        projectId: calcium-ratio-472014-r9
+
+  notify:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Deployment Success Notification
+      if: needs.build-and-deploy.result == 'success'
+      run: |
+        echo "✅ Deployment successful to Firebase Hosting"
+        echo "🌐 Live at: https://calcium-ratio-472014-r9.web.app"
+        
+    - name: Deployment Failure Notification
+      if: needs.build-and-deploy.result == 'failure'
+      run: |
+        echo "❌ Deployment failed"
+        echo "Check the logs above for details"
