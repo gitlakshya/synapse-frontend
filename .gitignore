@@ -1,0 +1,80 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.buildlog/
+.history
+.svn/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# Environment files
+.env
+.env.local
+.env.development
+.env.staging
+.env.production
+
+# Firebase config files (if using local config)
+firebase_options_local.dart
+
+# Credentials and secrets
+credentials/
+secrets/
+*.key
+*.pem
+
+# Generated config files
+lib/config/app_config.dart
+
+# Config files with sensitive data
+config/development.json
+config/production.json
+config/staging.json
+
+# Backup files and duplicates (should not be committed)
+**/*backup*
+**/*copy*
+*.backup
+lib/main copy.dart
+lib/main.dart.backup*
+lib/main_backup.dart
+lib/main_working_backup.dart
+lib/services/storage_service_backup.dart
+pubspec_original_backup.yaml
+pubspec_web_optimized.yaml
