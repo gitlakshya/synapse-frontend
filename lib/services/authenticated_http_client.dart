@@ -11,6 +11,11 @@ class AuthenticatedHttpClient {
   factory AuthenticatedHttpClient() => _instance;
   AuthenticatedHttpClient._internal();
 
+  // Timeout configurations for different operations
+  static const Duration _defaultTimeout = Duration(seconds: 30);
+  static const Duration _tripPlanningTimeout = Duration(minutes: 3); // 3 minutes for trip planning
+  static const Duration _chatTimeout = Duration(seconds: 45); // 45 seconds for chat
+
   final WebAuthService _authService = WebAuthService();
   final SessionService _sessionService = SessionService();
 
@@ -20,13 +25,16 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     final finalHeaders = await _buildHeaders(headers, includeAuth, forceGuest);
+    final requestTimeout = timeout ?? _defaultTimeout;
     
     try {
-      final response = await http.get(Uri.parse(url), headers: finalHeaders);
+      final response = await http.get(Uri.parse(url), headers: finalHeaders)
+          .timeout(requestTimeout);
       return await _handleTokenExpiry(response, () => 
-        http.get(Uri.parse(url), headers: finalHeaders)
+        http.get(Uri.parse(url), headers: finalHeaders).timeout(requestTimeout)
       );
     } catch (e) {
       print('GET request error: $e');
@@ -41,22 +49,24 @@ class AuthenticatedHttpClient {
     Object? body,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     final finalHeaders = await _buildHeaders(headers, includeAuth, forceGuest);
     final requestBody = await _buildBody(body, includeAuth, forceGuest);
+    final requestTimeout = timeout ?? _getTimeoutForUrl(url);
     
     try {
       final response = await http.post(
         Uri.parse(url), 
         headers: finalHeaders,
         body: requestBody,
-      );
+      ).timeout(requestTimeout);
       return await _handleTokenExpiry(response, () => 
         http.post(
           Uri.parse(url), 
           headers: finalHeaders,
           body: requestBody,
-        )
+        ).timeout(requestTimeout)
       );
     } catch (e) {
       print('POST request error: $e');
@@ -71,22 +81,24 @@ class AuthenticatedHttpClient {
     Object? body,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     final finalHeaders = await _buildHeaders(headers, includeAuth, forceGuest);
     final requestBody = await _buildBody(body, includeAuth, forceGuest);
+    final requestTimeout = timeout ?? _defaultTimeout;
     
     try {
       final response = await http.put(
         Uri.parse(url), 
         headers: finalHeaders,
         body: requestBody,
-      );
+      ).timeout(requestTimeout);
       return await _handleTokenExpiry(response, () => 
         http.put(
           Uri.parse(url), 
           headers: finalHeaders,
           body: requestBody,
-        )
+        ).timeout(requestTimeout)
       );
     } catch (e) {
       print('PUT request error: $e');
@@ -100,13 +112,16 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     final finalHeaders = await _buildHeaders(headers, includeAuth, forceGuest);
+    final requestTimeout = timeout ?? _defaultTimeout;
     
     try {
-      final response = await http.delete(Uri.parse(url), headers: finalHeaders);
+      final response = await http.delete(Uri.parse(url), headers: finalHeaders)
+          .timeout(requestTimeout);
       return await _handleTokenExpiry(response, () => 
-        http.delete(Uri.parse(url), headers: finalHeaders)
+        http.delete(Uri.parse(url), headers: finalHeaders).timeout(requestTimeout)
       );
     } catch (e) {
       print('DELETE request error: $e');
@@ -244,18 +259,30 @@ class AuthenticatedHttpClient {
     return response;
   }
 
+  /// Get appropriate timeout for specific URLs
+  Duration _getTimeoutForUrl(String url) {
+    if (url.contains('/plantrip') || url.contains('/plan-trip')) {
+      return _tripPlanningTimeout;
+    } else if (url.contains('/chat')) {
+      return _chatTimeout;
+    }
+    return _defaultTimeout;
+  }
+
   /// Helper method for API requests with base URL
   Future<http.Response> apiGet(
     String endpoint, {
     Map<String, String>? headers,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     return get(
       '${ApiConfig.baseUrl}$endpoint',
       headers: headers,
       includeAuth: includeAuth,
       forceGuest: forceGuest,
+      timeout: timeout,
     );
   }
 
@@ -266,6 +293,7 @@ class AuthenticatedHttpClient {
     Object? body,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     return post(
       '${ApiConfig.baseUrl}$endpoint',
@@ -273,6 +301,7 @@ class AuthenticatedHttpClient {
       body: body,
       includeAuth: includeAuth,
       forceGuest: forceGuest,
+      timeout: timeout,
     );
   }
 
@@ -283,6 +312,7 @@ class AuthenticatedHttpClient {
     Object? body,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     return put(
       '${ApiConfig.baseUrl}$endpoint',
@@ -290,6 +320,7 @@ class AuthenticatedHttpClient {
       body: body,
       includeAuth: includeAuth,
       forceGuest: forceGuest,
+      timeout: timeout,
     );
   }
 
@@ -299,12 +330,14 @@ class AuthenticatedHttpClient {
     Map<String, String>? headers,
     bool includeAuth = true,
     bool forceGuest = false,
+    Duration? timeout,
   }) async {
     return delete(
       '${ApiConfig.baseUrl}$endpoint',
       headers: headers,
       includeAuth: includeAuth,
       forceGuest: forceGuest,
+      timeout: timeout,
     );
   }
 
