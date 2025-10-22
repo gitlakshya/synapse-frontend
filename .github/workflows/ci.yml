@@ -26,6 +26,22 @@ jobs:
     - name: Get Dependencies
       run: flutter pub get
       
+    - name: Generate Config File
+      run: |
+        cat > lib/config/app_config.dart << 'EOF'
+        class AppConfig {
+          static const String environment = "production";
+          static const String backendUrl = "https://synapse-backend-80902795823.asia-south2.run.app";
+          static const String firebaseProjectId = "calcium-ratio-472014-r9";
+          static const String firebaseAppId = "1:80902795823:web:07e68e2ea360ad68b0ccda";
+          static const String firebaseApiKey = "AIzaSyCG8Yh_cJod32q4PlS2O3U4ZCF4t-Pf2AI";
+          static const String firebaseAuthDomain = "calcium-ratio-472014-r9.firebaseapp.com";
+          static const String firebaseStorageBucket = "calcium-ratio-472014-r9.appspot.com";
+          static const String firebaseMessagingSenderId = "80902795823";
+          static const String googleClientId = "80902795823-0peak8l1jm8jn0mcchcaik7n33mcnsdg.apps.googleusercontent.com";
+        }
+        EOF
+      
     - name: Verify Format
       run: dart format --set-exit-if-changed .
       continue-on-error: true
@@ -76,6 +92,22 @@ jobs:
         
     - name: Get Dependencies
       run: flutter pub get
+      
+    - name: Generate Config File
+      run: |
+        cat > lib/config/app_config.dart << 'EOF'
+        class AppConfig {
+          static const String environment = "production";
+          static const String backendUrl = "https://synapse-backend-80902795823.asia-south2.run.app";
+          static const String firebaseProjectId = "calcium-ratio-472014-r9";
+          static const String firebaseAppId = "1:80902795823:web:07e68e2ea360ad68b0ccda";
+          static const String firebaseApiKey = "AIzaSyCG8Yh_cJod32q4PlS2O3U4ZCF4t-Pf2AI";
+          static const String firebaseAuthDomain = "calcium-ratio-472014-r9.firebaseapp.com";
+          static const String firebaseStorageBucket = "calcium-ratio-472014-r9.appspot.com";
+          static const String firebaseMessagingSenderId = "80902795823";
+          static const String googleClientId = "80902795823-0peak8l1jm8jn0mcchcaik7n33mcnsdg.apps.googleusercontent.com";
+        }
+        EOF
       
     - name: Build ${{ matrix.platform }}
       run: |
