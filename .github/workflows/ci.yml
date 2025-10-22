@@ -1,0 +1,96 @@
+name: CI - Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test and Analyze
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.35.4'
+        channel: 'stable'
+        cache: true
+        
+    - name: Get Dependencies
+      run: flutter pub get
+      
+    - name: Verify Format
+      run: dart format --set-exit-if-changed .
+      continue-on-error: true
+      
+    - name: Analyze Code
+      run: flutter analyze --no-fatal-infos
+      
+    - name: Run Tests
+      run: flutter test --coverage
+      continue-on-error: true
+      
+    - name: Build Web (Dry Run)
+      run: flutter build web --release --web-renderer html
+      
+    - name: Check Build Size
+      run: |
+        echo "📦 Build Output Size:"
+        du -sh build/web
+        echo ""
+        echo "📊 Largest Files:"
+        find build/web -type f -exec ls -lh {} \; | sort -k5 -rh | head -10
+        
+  build-matrix:
+    name: Build Test - ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [web, android]
+        
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.35.4'
+        channel: 'stable'
+        cache: true
+        
+    - name: Setup Java (for Android)
+      if: matrix.platform == 'android'
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+        
+    - name: Get Dependencies
+      run: flutter pub get
+      
+    - name: Build ${{ matrix.platform }}
+      run: |
+        if [ "${{ matrix.platform }}" == "web" ]; then
+          flutter build web --release --web-renderer html
+        elif [ "${{ matrix.platform }}" == "android" ]; then
+          flutter build apk --release
+        fi
+        
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-${{ matrix.platform }}
+        path: |
+          build/web
+          build/app/outputs/flutter-apk/*.apk
+        retention-days: 7
+        if-no-files-found: warn

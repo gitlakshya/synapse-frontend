@@ -7,7 +7,7 @@ on:
   workflow_dispatch:  # Allow manual trigger
 
 jobs:
-  deploy:
+  build-and-deploy:
     name: Build and Deploy
     runs-on: ubuntu-latest
     
@@ -18,47 +18,46 @@ jobs:
     - name: Setup Flutter
       uses: subosito/flutter-action@v2
       with:
-        flutter-version: '3.35.4'  # Use stable version
+        flutter-version: '3.35.4'
         channel: 'stable'
         cache: true
         
     - name: Get Dependencies
       run: flutter pub get
       
-    - name: Run Tests
-      run: flutter test
-      continue-on-error: true  # Don't fail deployment if tests fail
-      
     - name: Analyze Code
       run: flutter analyze --no-fatal-infos
-      continue-on-error: true  # Don't fail deployment for analysis warnings
+      continue-on-error: true
+      
+    - name: Run Tests
+      run: flutter test
+      continue-on-error: true
       
     - name: Build Web App
-      run: flutter build web --release
+      run: flutter build web --release --web-renderer html
       
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
+    - name: Deploy to Firebase Hosting
+      uses: FirebaseExtended/action-hosting-deploy@v0
       with:
-        node-version: '18'
-        cache: 'npm'
-        cache-dependency-path: '**/package-lock.json'
+        repoToken: ${{ secrets.GITHUB_TOKEN }}
+        firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CALCIUM_RATIO_472014_R9 }}
+        channelId: live
+        projectId: calcium-ratio-472014-r9
+          
+  notify:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Deployment Success Notification
+      if: needs.build-and-deploy.result == 'success'
+      run: |
+        echo "✅ Deployment successful to Firebase Hosting"
+        echo "🌐 Live at: https://calcium-ratio-472014-r9.web.app"
         
-    - name: Install Firebase CLI
-      run: npm install -g firebase-tools
-      
-    - name: Deploy to Firebase
-      run: firebase deploy --only hosting --project calcium-ratio-472014-r9 --token "${{ secrets.FIREBASE_TOKEN }}"
-      env:
-        FIREBASE_PROJECT: calcium-ratio-472014-r9
-        
-    - name: Comment PR with Preview URL
-      if: github.event_name == 'pull_request'
-      uses: actions/github-script@v7
-      with:
-        script: |
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: '🚀 **Deployment Preview**: https://calcium-ratio-472014-r9.web.app\n\n📱 **Mobile Preview**: https://calcium-ratio-472014-r9.web.app\n\n✅ Build completed successfully!'
-          })
+    - name: Deployment Failure Notification
+      if: needs.build-and-deploy.result == 'failure'
+      run: |
+        echo "❌ Deployment failed"
+        echo "Check the logs above for details"

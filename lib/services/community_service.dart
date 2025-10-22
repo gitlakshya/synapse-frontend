@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class CommunityService {
   static const _storiesKey = 'travel_stories';
@@ -9,7 +9,7 @@ class CommunityService {
 
   static Future<List<TravelStory>> getTravelStories() async {
     try {
-      final storiesJson = html.window.localStorage[_storiesKey];
+      final storiesJson = web.window.localStorage.getItem(_storiesKey);
       if (storiesJson != null) {
         final List<dynamic> storiesList = json.decode(storiesJson);
         return storiesList.map((s) => TravelStory.fromJson(s)).toList();
@@ -25,12 +25,12 @@ class CommunityService {
     stories.insert(0, story);
     if (stories.length > 50) stories.removeLast(); // Keep last 50 stories
     
-    html.window.localStorage[_storiesKey] = json.encode(stories.map((s) => s.toJson()).toList());
+    web.window.localStorage.setItem(_storiesKey, json.encode(stories.map((s) => s.toJson()).toList()));
   }
 
   static Future<List<Mentor>> getAvailableMentors(String destination) async {
     try {
-      final mentorsJson = html.window.localStorage[_mentorsKey];
+      final mentorsJson = web.window.localStorage.getItem(_mentorsKey);
       if (mentorsJson != null) {
         final List<dynamic> mentorsList = json.decode(mentorsJson);
         final mentors = mentorsList.map((m) => Mentor.fromJson(m)).toList();
@@ -44,7 +44,7 @@ class CommunityService {
 
   static Future<List<LocalAmbassador>> getLocalAmbassadors(String destination) async {
     try {
-      final ambassadorsJson = html.window.localStorage[_ambassadorsKey];
+      final ambassadorsJson = web.window.localStorage.getItem(_ambassadorsKey);
       if (ambassadorsJson != null) {
         final List<dynamic> ambassadorsList = json.decode(ambassadorsJson);
         final ambassadors = ambassadorsList.map((a) => LocalAmbassador.fromJson(a)).toList();

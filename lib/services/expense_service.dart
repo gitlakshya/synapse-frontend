@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class ExpenseService {
   static const String _expensesKey = 'trip_expenses';
 
   Future<List<Expense>> getExpenses(String tripId) async {
-    final data = html.window.localStorage['${_expensesKey}_$tripId'];
+    final data = web.window.localStorage.getItem('${_expensesKey}_$tripId');
     if (data == null) return [];
     
     final List<dynamic> jsonList = json.decode(data);
@@ -35,7 +35,7 @@ class ExpenseService {
 
   Future<void> _saveExpenses(String tripId, List<Expense> expenses) async {
     final jsonList = expenses.map((e) => e.toJson()).toList();
-    html.window.localStorage['${_expensesKey}_$tripId'] = json.encode(jsonList);
+    web.window.localStorage.setItem('${_expensesKey}_$tripId', json.encode(jsonList));
   }
 
   Future<ExpenseSummary> getExpenseSummary(String tripId) async {

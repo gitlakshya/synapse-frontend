@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class PersonalizationService {
   static const _userProfileKey = 'user_profile';
@@ -8,7 +8,7 @@ class PersonalizationService {
 
   static Future<UserProfile> getUserProfile() async {
     try {
-      final profileJson = html.window.localStorage[_userProfileKey];
+      final profileJson = web.window.localStorage.getItem(_userProfileKey);
       if (profileJson != null) {
         return UserProfile.fromJson(json.decode(profileJson));
       }
@@ -19,12 +19,12 @@ class PersonalizationService {
   }
 
   static Future<void> updateUserProfile(UserProfile profile) async {
-    html.window.localStorage[_userProfileKey] = json.encode(profile.toJson());
+    web.window.localStorage.setItem(_userProfileKey, json.encode(profile.toJson()));
   }
 
   static Future<void> trackUserBehavior(UserBehavior behavior) async {
     try {
-      final behaviorJson = html.window.localStorage[_behaviorDataKey];
+      final behaviorJson = web.window.localStorage.getItem(_behaviorDataKey);
       List<UserBehavior> behaviors = [];
       
       if (behaviorJson != null) {
@@ -35,7 +35,7 @@ class PersonalizationService {
       behaviors.add(behavior);
       if (behaviors.length > 100) behaviors.removeAt(0); // Keep last 100 behaviors
       
-      html.window.localStorage[_behaviorDataKey] = json.encode(behaviors.map((b) => b.toJson()).toList());
+      web.window.localStorage.setItem(_behaviorDataKey, json.encode(behaviors.map((b) => b.toJson()).toList()));
     } catch (e) {
       print('Error tracking behavior: $e');
     }
@@ -43,7 +43,7 @@ class PersonalizationService {
 
   static Future<List<PersonalizedRecommendation>> getPersonalizedRecommendations(String destination) async {
     final profile = await getUserProfile();
-    final behaviorJson = html.window.localStorage[_behaviorDataKey];
+    final behaviorJson = web.window.localStorage.getItem(_behaviorDataKey);
     
     List<UserBehavior> behaviors = [];
     if (behaviorJson != null) {

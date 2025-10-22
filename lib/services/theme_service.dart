@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class ThemeService extends ChangeNotifier {
   static const _key = 'theme_mode';
@@ -13,7 +13,7 @@ class ThemeService extends ChangeNotifier {
 
   Future<void> _loadTheme() async {
     try {
-      final savedTheme = html.window.localStorage[_key];
+      final savedTheme = web.window.localStorage[_key];
       if (savedTheme != null) {
         _themeMode = ThemeMode.values.firstWhere(
           (mode) => mode.toString() == savedTheme,
@@ -28,7 +28,7 @@ class ThemeService extends ChangeNotifier {
 
   Future<void> toggleTheme() async {
     _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-    html.window.localStorage[_key] = _themeMode.toString();
+    web.window.localStorage[_key] = _themeMode.toString();
     notifyListeners();
   }
 

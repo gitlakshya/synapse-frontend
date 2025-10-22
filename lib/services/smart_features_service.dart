@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class SmartFeaturesService {
   static const _packingListsKey = 'packing_lists';
@@ -264,12 +264,12 @@ class SmartFeaturesService {
   static Future<void> _savePackingList(PackingList packingList) async {
     final lists = await _getPackingLists();
     lists.add(packingList);
-    html.window.localStorage[_packingListsKey] = json.encode(lists.map((l) => l.toJson()).toList());
+    web.window.localStorage.setItem(_packingListsKey, json.encode(lists.map((l) => l.toJson()).toList()));
   }
 
   static Future<List<PackingList>> _getPackingLists() async {
     try {
-      final listsJson = html.window.localStorage[_packingListsKey];
+      final listsJson = web.window.localStorage.getItem(_packingListsKey);
       if (listsJson != null) {
         final List<dynamic> listsList = json.decode(listsJson);
         return listsList.map((l) => PackingList.fromJson(l)).toList();
@@ -283,12 +283,12 @@ class SmartFeaturesService {
   static Future<void> _saveGroupExpense(GroupExpense expense) async {
     final expenses = await _getAllGroupExpenses();
     expenses.add(expense);
-    html.window.localStorage[_expensesKey] = json.encode(expenses.map((e) => e.toJson()).toList());
+    web.window.localStorage.setItem(_expensesKey, json.encode(expenses.map((e) => e.toJson()).toList()));
   }
 
   static Future<List<GroupExpense>> _getAllGroupExpenses() async {
     try {
-      final expensesJson = html.window.localStorage[_expensesKey];
+      final expensesJson = web.window.localStorage.getItem(_expensesKey);
       if (expensesJson != null) {
         final List<dynamic> expensesList = json.decode(expensesJson);
         return expensesList.map((e) => GroupExpense.fromJson(e)).toList();
@@ -307,12 +307,12 @@ class SmartFeaturesService {
   static Future<void> _savePriceAlert(PriceAlert alert) async {
     final alerts = await _getAllPriceAlerts();
     alerts.add(alert);
-    html.window.localStorage[_alertsKey] = json.encode(alerts.map((a) => a.toJson()).toList());
+    web.window.localStorage.setItem(_alertsKey, json.encode(alerts.map((a) => a.toJson()).toList()));
   }
 
   static Future<List<PriceAlert>> _getAllPriceAlerts() async {
     try {
-      final alertsJson = html.window.localStorage[_alertsKey];
+      final alertsJson = web.window.localStorage.getItem(_alertsKey);
       if (alertsJson != null) {
         final List<dynamic> alertsList = json.decode(alertsJson);
         return alertsList.map((a) => PriceAlert.fromJson(a)).toList();

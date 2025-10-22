@@ -5,6 +5,7 @@ import 'dart:ui';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:shimmer/shimmer.dart';
@@ -18,10 +19,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'firebase_options.dart';
 import 'services/web_auth_service.dart';
-import 'services/gemini_service.dart';
+import 'services/chat_service.dart';
 import 'services/api_service.dart';
 import 'services/authenticated_http_client.dart';
 import 'services/theme_service.dart';
+import 'services/favorites_service.dart';
 import 'config/api_config.dart';
 import 'widgets/animated_hero_section.dart';
 import 'widgets/interactive_map_widget.dart';
@@ -328,11 +330,27 @@ class _LandingShellState extends State<LandingShell> with TickerProviderStateMix
     if (p == 2) {
       _saveState();
       _generateItinerary();
+    } else if (p == 3 && user != null) {
+      // Load favorites for the signed-in user
+      _loadUserFavorites(user.uid);
+      _mainAnimationController.forward().then((_) {
+        setState(() => page = p);
+        _mainAnimationController.reverse();
+      });
     } else {
       _mainAnimationController.forward().then((_) {
         setState(() => page = p);
         _mainAnimationController.reverse();
       });
+    }
+  }
+  
+  void _loadUserFavorites(String userId) async {
+    // Load favorites from service for the current user
+    try {
+      await FavoritesService().loadFavorites(userId);
+    } catch (e) {
+      if (kDebugMode) debugPrint('Error loading favorites: $e');
     }
   }
   
@@ -364,8 +382,8 @@ class _LandingShellState extends State<LandingShell> with TickerProviderStateMix
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Row(
           children: [
-            Icon(Icons.location_on, color: Colors.deepOrangeAccent),
-            SizedBox(width: 8),
+            const Icon(Icons.location_on, color: Colors.deepOrangeAccent),
+            const SizedBox(width: 8),
             Text('Destination Required', style: TextStyle(color: Colors.white)),
           ],
         ),
@@ -454,15 +472,17 @@ class _LandingShellState extends State<LandingShell> with TickerProviderStateMix
                       
                       try {
                         final user = await WebAuthService().signInWithGoogle();
-                        if (user != null) {
+                        if (user != null && mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(content: Text('Welcome, ${user.displayName ?? user.email}!'), backgroundColor: Colors.green),
                           );
                         }
                       } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Sign in failed. Please try again.'), backgroundColor: Colors.red),
-                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Sign in failed. Please try again.'), backgroundColor: Colors.red),
+                          );
+                        }
                       }
                     },
                     borderRadius: BorderRadius.circular(10),
@@ -1042,19 +1062,11 @@ class _LandingPageState extends State<LandingPage> with TickerProviderStateMixin
   String selectedLanguage = 'English';
   late AnimationController _heroAnimationController;
   late AnimationController _statsController;
-  late Timer _notificationTimer;
   late Timer _testimonialTimer;
   late PageController _testimonialController;
-  int _currentBookingIndex = 0;
   int _currentTestimonialIndex = 0;
   int _hoveredCardIndex = -1;
   
-  final List<String> _recentBookings = [
-    'Sarah just booked Goa trip',
-    'Rahul planned Kerala adventure', 
-    'Priya booked Rajasthan tour',
-    'Amit planned Himachal trip'
-  ];
   
   @override
   void initState() {
@@ -1071,20 +1083,9 @@ class _LandingPageState extends State<LandingPage> with TickerProviderStateMixin
     
     _testimonialController = PageController(viewportFraction: 0.85);
     
-    _startNotificationTimer();
     _startTestimonialTimer();
-    _incrementStats();
   }
-  
-  void _startNotificationTimer() {
-    _notificationTimer = Timer.periodic(const Duration(seconds: 4), (timer) {
-      if (mounted) {
-        setState(() {
-          _currentBookingIndex = (_currentBookingIndex + 1) % _recentBookings.length;
-        });
-      }
-    });
-  }
+
   
   void _startTestimonialTimer() {
     _testimonialTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
@@ -1099,33 +1100,19 @@ class _LandingPageState extends State<LandingPage> with TickerProviderStateMixin
     });
   }
   
-  late Timer _statsTimer;
-  
-  void _incrementStats() {
-    _statsTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (mounted) {
-        setState(() {
-          // Updated trips count for demo
-        });
-      }
-    });
-  }
-  
   @override
   void dispose() {
     _heroAnimationController.dispose();
     _statsController.dispose();
-    _notificationTimer.cancel();
     _testimonialTimer.cancel();
     _testimonialController.dispose();
-    _statsTimer.cancel();
     super.dispose();
   }
   
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final heroHeight = (size.height * 0.55).clamp(320, 520);
+    final heroHeight = (size.height * 0.55).clamp(320.0, 520.0);
 
     return SingleChildScrollView(
       child: Column(
@@ -1140,7 +1127,7 @@ class _LandingPageState extends State<LandingPage> with TickerProviderStateMixin
                   });
                 },
                 onPlanTrip: widget.onCustomize,
-                height: heroHeight.toDouble(),
+                height: heroHeight,
               ),
             ],
           ),
@@ -2103,7 +2090,9 @@ class _CustomizationPageState extends State<CustomizationPage> with TickerProvid
                             'people': widget.prefs.people,
                             'themes': widget.prefs.themes.toList(),
                             'themeIntensity': Map.fromEntries(
-                              _themeIntensity.entries.where((entry) => widget.prefs.themes.contains(entry.key))
+                              _themeIntensity.entries
+                                .where((entry) => widget.prefs.themes.contains(entry.key))
+                                .map((entry) => MapEntry(entry.key, double.parse(entry.value.toStringAsFixed(2))))
                             ),
                             'specialRequirements': _specialRequirementsController.text,
                             'dates': widget.prefs.dates != null ? {
@@ -2598,23 +2587,30 @@ class ItineraryPage extends StatefulWidget {
 }
 
 class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateMixin {
+  // Static gradients for better performance (reused across rebuilds)
+  static final _headerGradient = LinearGradient(
+    colors: [Colors.deepOrangeAccent.withOpacity(0.1), Colors.transparent],
+  );
+  static const _dayHeaderGradient = LinearGradient(
+    colors: [Colors.deepOrangeAccent, Colors.orange],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  
   late final List<ItineraryDay> days;
   late int hotelCost, transportCost, experiencesCost, foodCost;
 
-  bool smartAdjusted = false;
   bool _showMap = false;
   late AnimationController _mainAnimationController; // Single controller
-  Timer? _eventTimer;
+  Timer? _priceUpdateTimer; // Add timer reference
   
   List<LatLng> _routePoints = [];
-  List<Map<String, String>> _localEvents = [];
   
   // Itinerary metadata for Smart Adjust API
   String? itineraryTitle;
   String? destination;
   String? itineraryId;
   double? totalBudget;
-  int _currentEventIndex = 0;
   
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -2644,16 +2640,14 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
       vsync: this,
     );
     _mainAnimationController.forward();
-    _loadLocalEvents();
-    _startEventRotation();
     _initializeAdvancedFeatures();
   }
   
   @override
   void dispose() {
     _mainAnimationController.dispose();
-    _eventTimer?.cancel();
     _searchController.dispose();
+    _priceUpdateTimer?.cancel(); // Cancel price update timer
     super.dispose();
   }
   
@@ -2677,7 +2671,7 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
   }
   
   void _updatePricesRealTime() {
-    Timer.periodic(const Duration(minutes: 1), (timer) {
+    _priceUpdateTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       if (mounted) {
         for (final day in days) {
           for (final item in day.items) {
@@ -2687,6 +2681,8 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
           }
         }
         setState(() {});
+      } else {
+        timer.cancel(); // Cancel timer if widget is disposed
       }
     });
   }
@@ -2809,90 +2805,14 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
   }
   
   List<LatLng> _generateRoutePointsFromActivities(List<ItineraryDay> days) {
-    // Generate some sample coordinates based on destination
-    final destination = widget.prefs.destination.toLowerCase();
-    return _getPlacesOfInterest(destination);
+    // Extract coordinates from actual activities in the itinerary
+    // In a real implementation, you would geocode the location strings
+    // For now, return empty list as we should get coordinates from API response
+    List<LatLng> points = [];
+    return points;
   }
+
   
-  List<LatLng> _getDestinationCoordinates(String destination) {
-    final destLower = destination.toLowerCase();
-    
-    // Get actual coordinates for places of interest based on destination
-    final placeCoords = _getPlacesOfInterest(destLower);
-    
-    return placeCoords;
-  }
-  
-  List<LatLng> _getPlacesOfInterest(String destination) {
-    final placesMap = {
-      'goa': [
-        LatLng(15.2993, 74.1240), // Panaji
-        LatLng(15.5557, 73.7515), // Baga Beach
-        LatLng(15.2832, 74.1281), // Old Goa Churches
-        LatLng(15.1659, 74.0234), // Margao Market
-        LatLng(15.5394, 73.7654), // Calangute Beach
-        LatLng(15.2832, 74.1281), // Basilica of Bom Jesus
-      ],
-      'kerala': [
-        LatLng(9.9312, 76.2673), // Kochi
-        LatLng(9.3917, 76.5017), // Alleppey Backwaters
-        LatLng(10.0889, 76.5017), // Munnar Tea Gardens
-        LatLng(8.5241, 76.9366), // Thiruvananthapuram
-        LatLng(11.8745, 75.3704), // Wayanad
-        LatLng(9.5916, 76.5222), // Kumarakom
-      ],
-      'rajasthan': [
-        LatLng(26.9124, 75.7873), // Jaipur City Palace
-        LatLng(25.2968, 73.0178), // Udaipur Lake Palace
-        LatLng(26.2389, 73.0243), // Jodhpur Mehrangarh Fort
-        LatLng(27.1767, 78.0081), // Agra Taj Mahal
-        LatLng(26.9157, 75.8203), // Amber Fort
-        LatLng(24.5854, 73.7125), // Chittorgarh Fort
-      ],
-      'mumbai': [
-        LatLng(18.9220, 72.8347), // Gateway of India
-        LatLng(19.0330, 72.8297), // Marine Drive
-        LatLng(19.0176, 72.8562), // Colaba Causeway
-        LatLng(18.9067, 72.8147), // Elephanta Caves
-        LatLng(19.0728, 72.8826), // Juhu Beach
-        LatLng(19.0176, 72.8562), // Crawford Market
-      ],
-      'delhi': [
-        LatLng(28.6562, 77.2410), // Red Fort
-        LatLng(28.6129, 77.2295), // India Gate
-        LatLng(28.6507, 77.2334), // Chandni Chowk
-        LatLng(28.5562, 77.1000), // Qutub Minar
-        LatLng(28.6139, 77.2090), // Humayun's Tomb
-        LatLng(28.6692, 77.2303), // Jama Masjid
-      ],
-      'himachal': [
-        LatLng(32.2432, 77.1892), // Manali
-        LatLng(31.1048, 77.1734), // Shimla
-        LatLng(32.0840, 77.5619), // Rohtang Pass
-        LatLng(32.2396, 77.1887), // Solang Valley
-        LatLng(31.8917, 76.3619), // Kasauli
-        LatLng(32.3475, 77.1734), // Kullu
-      ],
-    };
-    
-    // Add Karnataka coordinates if not already present
-    if (destination.toLowerCase() == 'karnataka' && !placesMap.containsKey('karnataka')) {
-      placesMap['karnataka'] = [
-        LatLng(12.9716, 77.5946), // Bengaluru
-        LatLng(14.2180, 74.8397), // Hampi
-        LatLng(12.2958, 76.6394), // Mysore Palace
-        LatLng(13.3409, 74.7421), // Udupi
-        LatLng(15.3173, 75.7139), // Badami Caves
-        LatLng(12.9141, 74.8560), // Coorg
-      ];
-    }
-    
-    return placesMap[destination.toLowerCase()] ?? [
-      LatLng(12.9716, 77.5946), // Default Bengaluru
-      LatLng(12.9916, 77.6016),
-      LatLng(12.9516, 77.5846),
-    ];
-  }
   
   String _getActivityStartTime(String timeSlot, int day) {
     final times = {
@@ -3047,7 +2967,11 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
 
   @override
   Widget build(BuildContext context) {
-    final isWide = MediaQuery.of(context).size.width > 1000;
+    // Cache MediaQuery to avoid repeated lookups
+    final mediaQuery = MediaQuery.of(context);
+    final isWide = mediaQuery.size.width > 1000;
+    final screenWidth = mediaQuery.size.width;
+    
     return SafeArea(
       child: Row(
         children: [
@@ -3059,9 +2983,7 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [Colors.deepOrangeAccent.withOpacity(0.1), Colors.transparent],
-                    ),
+                    gradient: _headerGradient,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Column(
@@ -3151,16 +3073,6 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
                   ),
                 ),
                 const SizedBox(height: 12),
-                if (smartAdjusted)
-                  Card(
-                    color: Colors.orange.shade800, 
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)), 
-                    child: const Padding(
-                      padding: EdgeInsets.all(12.0), 
-                      child: Text('Smart Adjust applied: outdoor Day 2 activity swapped to indoor alternative', style: TextStyle(color: Colors.white))
-                    )
-                  ),
-                const SizedBox(height: 12),
                 if (_showBudgetTracker) _buildBudgetTracker(),
                 if (_showBudgetTracker) const SizedBox(height: 12),
                 if (_showFilters) _buildFiltersSection(),
@@ -3233,11 +3145,7 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [Colors.deepOrangeAccent, Colors.orange],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  gradient: _dayHeaderGradient,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -3612,8 +3520,6 @@ class _ItineraryPageState extends State<ItineraryPage> with TickerProviderStateM
           _buildSmartRecommendations(),
           const SizedBox(height: 12),
           _buildPriceAlertsSection(),
-          const SizedBox(height: 12),
-          _buildLocalEventsSection(),
           const SizedBox(height: 12),
           _buildSocialIntegration(),
           const SizedBox(height: 12),
@@ -4036,149 +3942,6 @@ ${days.take(2).map((d) => '• ${d.items.first.title}').join('\n')}
       const SnackBar(content: Text('Shared to Facebook!'), backgroundColor: Colors.blue),
     );
   }
-  
-  void _loadLocalEvents() {
-    final destination = widget.prefs.destination.toLowerCase();
-    final eventsMap = {
-      'goa': [
-        {'title': 'Sunburn Festival', 'date': 'Dec 28-31', 'type': 'Music', 'icon': '🎵'},
-        {'title': 'Saturday Night Market', 'date': 'Every Sat', 'type': 'Market', 'icon': '🛍️'},
-        {'title': 'Goa Carnival', 'date': 'Feb 10-13', 'type': 'Festival', 'icon': '🎭'},
-      ],
-      'kerala': [
-        {'title': 'Kochi Biennale', 'date': 'Dec-Mar', 'type': 'Art', 'icon': '🎨'},
-        {'title': 'Theyyam Performance', 'date': 'Nov-May', 'type': 'Cultural', 'icon': '🎭'},
-        {'title': 'Spice Market Fair', 'date': 'Every Fri', 'type': 'Market', 'icon': '🌶️'},
-      ],
-      'rajasthan': [
-        {'title': 'Desert Festival', 'date': 'Feb 17-19', 'type': 'Cultural', 'icon': '🐪'},
-        {'title': 'Pushkar Camel Fair', 'date': 'Nov 20-28', 'type': 'Fair', 'icon': '🐫'},
-        {'title': 'Jaipur Literature Festival', 'date': 'Jan 25-29', 'type': 'Literature', 'icon': '📚'},
-      ],
-      'mumbai': [
-        {'title': 'Mumbai Film Festival', 'date': 'Oct 15-22', 'type': 'Film', 'icon': '🎬'},
-        {'title': 'Kala Ghoda Arts Festival', 'date': 'Feb 4-12', 'type': 'Arts', 'icon': '🎨'},
-        {'title': 'Crawford Market Bazaar', 'date': 'Daily', 'type': 'Market', 'icon': '🛒'},
-      ],
-      'delhi': [
-        {'title': 'Delhi Book Fair', 'date': 'Aug 26-Sep 3', 'type': 'Books', 'icon': '📖'},
-        {'title': 'Dilli Haat Market', 'date': 'Daily', 'type': 'Handicrafts', 'icon': '🎪'},
-        {'title': 'India International Trade Fair', 'date': 'Nov 14-27', 'type': 'Trade', 'icon': '🏢'},
-      ],
-      'himachal': [
-        {'title': 'Manali Winter Carnival', 'date': 'Jan 2-5', 'type': 'Winter Sports', 'icon': '⛷️'},
-        {'title': 'Kullu Dussehra', 'date': 'Oct 15-21', 'type': 'Festival', 'icon': '🎊'},
-        {'title': 'Apple Harvest Festival', 'date': 'Sep 10-15', 'type': 'Harvest', 'icon': '🍎'},
-      ],
-      'karnataka': [
-        {'title': 'Bangalore Literature Festival', 'date': 'Nov 18-20', 'type': 'Literature', 'icon': '📚'},
-        {'title': 'Hampi Utsav', 'date': 'Nov 3-5', 'type': 'Heritage', 'icon': '🏛️'},
-        {'title': 'Mysore Dasara', 'date': 'Sep 26-Oct 5', 'type': 'Royal Festival', 'icon': '👑'},
-      ],
-    };
-    _localEvents = List<Map<String, String>>.from(eventsMap[destination] ?? eventsMap['goa']!);
-  }
-  
-  void _startEventRotation() {
-    _eventTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      if (mounted && _localEvents.isNotEmpty) {
-        _mainAnimationController.forward().then((_) {
-          setState(() {
-            _currentEventIndex = (_currentEventIndex + 1) % _localEvents.length;
-          });
-          _mainAnimationController.reverse();
-        });
-      }
-    });
-  }
-  
-  Widget _buildLocalEventsSection() {
-    if (_localEvents.isEmpty) return const SizedBox.shrink();
-    
-    final currentEvent = _localEvents[_currentEventIndex];
-    
-    return Card(
-      color: const Color(0xFF0B1220),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Row(
-              children: [
-                Icon(Icons.event, color: Colors.deepOrangeAccent, size: 16),
-                SizedBox(width: 8),
-                Text('Local Events', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              ],
-            ),
-            const SizedBox(height: 12),
-            AnimatedBuilder(
-              animation: _mainAnimationController,
-              builder: (context, child) {
-                return Transform.translate(
-                  offset: Offset(_mainAnimationController.value * 50, 0),
-                  child: Opacity(
-                    opacity: 1.0 - _mainAnimationController.value,
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Colors.deepOrangeAccent.withOpacity(0.1), Colors.transparent],
-                        ),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.deepOrangeAccent.withOpacity(0.3)),
-                      ),
-                      child: Row(
-                        children: [
-                          Text(currentEvent['icon']!, style: const TextStyle(fontSize: 24)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  currentEvent['title']!,
-                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Text(
-                                      currentEvent['date']!,
-                                      style: const TextStyle(color: Colors.white70, fontSize: 11),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: Colors.deepOrangeAccent.withOpacity(0.2),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        currentEvent['type']!,
-                                        style: const TextStyle(color: Colors.deepOrangeAccent, fontSize: 9, fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildBudgetSummary() {
     return Card(
@@ -4538,18 +4301,19 @@ ${days.take(2).map((d) => '• ${d.items.first.title}').join('\n')}
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
         
-        // Smart adjust API now directly returns the itinerary object (same format as /plantrip)
-        // No need to check for 'success' wrapper - the response is the itinerary itself
-        _updateItineraryFromApi(responseData);
-        
-        setState(() {
-          smartAdjusted = true;
-        });
+        // Smart adjust API returns { status, adjustedItinerary, ... }
+        // Extract the adjustedItinerary object which contains the actual itinerary data
+        if (responseData['adjustedItinerary'] != null) {
+          _updateItineraryFromApi(responseData['adjustedItinerary']);
+        } else {
+          // Fallback: if response is already in the correct format
+          _updateItineraryFromApi(responseData);
+        }
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
     } catch (e) {
-      print('Smart Adjust error: $e');
+      debugPrint('Smart Adjust error: $e');
       rethrow;
     }
   }
@@ -4563,7 +4327,7 @@ ${days.take(2).map((d) => '• ${d.items.first.title}').join('\n')}
         return userProfile['uid'] as String;
       }
     } catch (e) {
-      print('Could not get authenticated user ID: $e');
+      debugPrint('Could not get authenticated user ID: $e');
     }
     
     // For unauthenticated users, generate or retrieve session ID
@@ -4641,12 +4405,14 @@ ${days.take(2).map((d) => '• ${d.items.first.title}').join('\n')}
       
       final adjustedDays = adjustedItinerary['days'] as List<dynamic>;
       
-      // Update existing days with adjusted data
-      for (int i = 0; i < adjustedDays.length && i < days.length; i++) {
+      // Clear and rebuild days list with adjusted data
+      days.clear();
+      
+      for (int i = 0; i < adjustedDays.length; i++) {
         final dayData = adjustedDays[i] as Map<String, dynamic>;
         final activities = dayData['activities'] as List<dynamic>;
         
-        days[i].items = activities.map<ItineraryItem>((activityData) {
+        final dayItems = activities.map<ItineraryItem>((activityData) {
           final activity = activityData as Map<String, dynamic>;
           return ItineraryItem(
             id: activity['poiId'] ?? '',
@@ -4675,9 +4441,21 @@ ${days.take(2).map((d) => '• ${d.items.first.title}').join('\n')}
             location: null, // Default no location
           );
         }).toList();
+        
+        days.add(ItineraryDay(
+          dayNumber: (dayData['dayIndex'] ?? (i + 1)) as int,
+          items: dayItems,
+        ));
       }
+      
+      // Recalculate costs
+      hotelCost = (totalBudget! * 0.3).toInt();
+      transportCost = (totalBudget! * 0.2).toInt();
+      experiencesCost = (totalBudget! * 0.35).toInt();
+      foodCost = (totalBudget! * 0.15).toInt();
+      
     } catch (e) {
-      print('Error updating itinerary from API: $e');
+      debugPrint('Error updating itinerary from API: $e');
       throw Exception('Failed to parse adjusted itinerary data');
     }
   }
@@ -5278,7 +5056,7 @@ class _AIAssistantState extends State<AIAssistant> with TickerProviderStateMixin
   late AnimationController _messageController;
   late AnimationController _headerController;
   bool _isTyping = false;
-  GeminiService? _geminiService;
+  ChatService? _chatService;
   bool _hasApiKey = false;
   
   @override
@@ -5296,14 +5074,14 @@ class _AIAssistantState extends State<AIAssistant> with TickerProviderStateMixin
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    _initializeGeminiService();
+    _initializeChatService();
     _headerController.forward();
   }
   
-  void _initializeGeminiService() {
+  void _initializeChatService() {
     try {
-      _geminiService = GeminiService();
-      _hasApiKey = _geminiService?.isConfigured ?? false;
+      _chatService = ChatService.instance;
+      _hasApiKey = _chatService?.isConfigured ?? false;
     } catch (e) {
       _hasApiKey = false;
     }
@@ -5562,8 +5340,8 @@ class _AIAssistantState extends State<AIAssistant> with TickerProviderStateMixin
   }
 
   Future<String> _getAIResponse(String message) async {
-    if (!_hasApiKey || _geminiService == null) {
-      return "🤖 I'm here to help with your travel planning! Please configure the API key in settings for personalized assistance.";
+    if (!_hasApiKey || _chatService == null) {
+      return "🤖 I'm here to help with your travel planning! Please configure the API connection in settings for personalized assistance.";
     }
     
     try {
@@ -5576,7 +5354,7 @@ class _AIAssistantState extends State<AIAssistant> with TickerProviderStateMixin
         .map((msg) => '${msg.isUser ? "User" : "Assistant"}: ${msg.text}')
         .toList();
       
-      return await _geminiService!.getResponse(message, 
+      return await _chatService!.getResponse(message, 
         destination: destination, 
         budget: budget, 
         conversationHistory: conversationHistory);
@@ -5611,7 +5389,7 @@ class _AIAssistantState extends State<AIAssistant> with TickerProviderStateMixin
             const Text('• Activity & attraction suggestions', style: TextStyle(color: Colors.white70)),
             if (_hasApiKey)
               const Text(
-                'Powered by Gemini AI - Advanced responses!',
+                'Powered by backend AI service - Real-time responses!',
                 style: TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 12)
               ),
           ],

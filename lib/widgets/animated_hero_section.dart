@@ -8,7 +8,6 @@ import 'dart:ui';
 import '../services/localization_service.dart';
 import '../widgets/language_selector.dart';
 import '../models/user_models.dart';
-import '../screens/auth_screen.dart';
 import '../services/web_auth_service.dart';
 
 class AnimatedHeroSection extends StatefulWidget {
@@ -155,6 +154,138 @@ class _AnimatedHeroSectionState extends State<AnimatedHeroSection>
     }
   }
 
+  void _showSignInDialog(BuildContext context) {
+    showGeneralDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      barrierDismissible: true,
+      barrierLabel: 'Sign In',
+      transitionDuration: const Duration(milliseconds: 300),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.3),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          )),
+          child: FadeTransition(
+            opacity: animation,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.95, end: 1.0).animate(CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+              )),
+              child: child,
+            ),
+          ),
+        );
+      },
+      pageBuilder: (context, animation, secondaryAnimation) => BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            width: 320,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0E1620),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withOpacity(0.1)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.person, color: Colors.deepOrangeAccent, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Sign In', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () async {
+                      HapticFeedback.lightImpact();
+                      Navigator.pop(context);
+                      
+                      // Show loading
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Signing in...'), backgroundColor: Colors.blue),
+                      );
+                      
+                      try {
+                        final user = await WebAuthService().signInWithGoogle();
+                        if (user != null && context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Welcome, ${user.displayName ?? user.email}!'), backgroundColor: Colors.green),
+                          );
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Sign in failed. Please try again.'), backgroundColor: Colors.red),
+                          );
+                        }
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(10),
+                    splashColor: Colors.white.withOpacity(0.1),
+                    highlightColor: Colors.white.withOpacity(0.05),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      curve: Curves.easeOutCubic,
+                      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Image.asset(
+                            'assets/google_logo.png',
+                            height: 20,
+                            errorBuilder: (context, error, stackTrace) => const Icon(Icons.g_mobiledata, size: 20, color: Colors.blue),
+                          ),
+                          const SizedBox(width: 12),
+                          const Text(
+                            'Continue with Google',
+                            style: TextStyle(
+                              color: Colors.black87,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -270,11 +401,8 @@ class _AnimatedHeroSectionState extends State<AnimatedHeroSection>
           builder: (context, user, child) => user == null
             ? ElevatedButton.icon(
                 onPressed: () {
-                  // Navigate to auth screen
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const AuthScreen()),
-                  );
+                  // Show sign-in popup dialog
+                  _showSignInDialog(context);
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepOrangeAccent,

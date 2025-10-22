@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/weather_service.dart';
-import '../services/gemini_service.dart';
+import '../services/chat_service.dart';
 
 // Trip Preferences State
 class TripPreferences {
@@ -83,9 +83,9 @@ class WeatherServiceProvider extends ChangeNotifier {
   WeatherService get weatherService => _weatherService;
 }
 
-// Gemini Service Provider
-class GeminiServiceProvider extends ChangeNotifier {
-  final GeminiService _geminiService = GeminiService();
+// Chat Service Provider
+class ChatServiceProvider extends ChangeNotifier {
+  final ChatService _chatService = ChatService.instance;
   
-  GeminiService get geminiService => _geminiService;
+  ChatService get chatService => _chatService;
 }

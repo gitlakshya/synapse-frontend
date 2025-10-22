@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -471,7 +472,7 @@ class AdvancedFeaturesWidgets {
 
   static void _showAllStories(BuildContext context) {
     // Navigate to full stories page
-    print('Show all stories');
+    if (kDebugMode) debugPrint('Show all stories');
   }
 
   static void _generatePackingList(String destination, DateTime startDate, DateTime endDate) async {
@@ -485,11 +486,11 @@ class AdvancedFeaturesWidgets {
       weatherForecast: 'sunny',
     );
     
-    print('Generated packing list for $destination with ${packingList.items.length} items');
+    if (kDebugMode) debugPrint('Generated packing list for $destination with ${packingList.items.length} items');
   }
 
   static void _showCarbonDetails() {
-    print('Carbon footprint details: Transport 85kg, Accommodation 30kg, Activities 10kg');
+    if (kDebugMode) debugPrint('Carbon footprint details: Transport 85kg, Accommodation 30kg, Activities 10kg');
   }
 
   static Widget _buildCarbonBreakdown(String category, String amount, double percentage) {

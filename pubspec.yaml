@@ -46,8 +46,8 @@ dependencies:
   auto_size_text: ^3.0.0
   flutter_typeahead: ^4.8.0
   share_plus: ^7.2.1
-  google_generative_ai: ^0.2.2
   google_fonts: ^6.1.0
+  web: ^0.5.1
   
   # Web OAuth Authentication
   firebase_core: ^2.32.0

@@ -1,7 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:async';
-import 'dart:html' as html;
+import 'package:flutter/foundation.dart';
+import 'package:web/web.dart' as web;
 import '../config/env_config.dart';
 import 'user_data_service.dart';
 
@@ -25,11 +26,11 @@ class WebAuthService {
   User? get currentUser => _auth.currentUser;
 
   Future<void> initialize() async {
-    print('Initializing WebAuthService...');
+    if (kDebugMode) debugPrint('Initializing WebAuthService...');
     
     // Set up auth state listener
     _auth.authStateChanges().listen((user) async {
-      print('Auth state changed: ${user?.email ?? 'null'}');
+      if (kDebugMode) debugPrint('Auth state changed: ${user?.email ?? 'null'}');
       _userController.add(user);
       
       // Store/clear ID token when auth state changes
@@ -40,7 +41,7 @@ class WebAuthService {
         try {
           await _userDataService.storeAndValidateUser(user);
         } catch (e) {
-          print('Backend validation failed during auth state change: $e');
+          if (kDebugMode) debugPrint('Backend validation failed during auth state change: $e');
         }
       } else {
         await _clearIdToken();
@@ -49,7 +50,7 @@ class WebAuthService {
     
     // Check for existing authentication and auto-login
     await _checkExistingAuth();
-    print('WebAuthService initialization complete');
+    if (kDebugMode) debugPrint('WebAuthService initialization complete');
   }
 
   /// Check for existing authentication and attempt auto-login
@@ -58,45 +59,45 @@ class WebAuthService {
       // Check if Firebase has a persisted user
       final currentUser = _auth.currentUser;
       if (currentUser != null) {
-        print('Firebase user found, validating with backend...');
+        if (kDebugMode) debugPrint('Firebase user found, validating with backend...');
         await _userDataService.storeAndValidateUser(currentUser);
         return;
       }
       
       // Check for stored ID token
-      final storedToken = html.window.localStorage[_idTokenKey];
+      final storedToken = web.window.localStorage[_idTokenKey];
       if (storedToken != null) {
-        print('Stored ID token found, attempting to restore session...');
+        if (kDebugMode) debugPrint('Stored ID token found, attempting to restore session...');
         // Firebase should automatically restore the user if the token is valid
         // The authStateChanges listener will handle the rest
       }
     } catch (e) {
-      print('Error checking existing auth: $e');
+      if (kDebugMode) debugPrint('Error checking existing auth: $e');
       await _clearIdToken();
     }
   }
 
   Future<User?> signInWithGoogle() async {
     try {
-      print('Starting Google sign-in process...');
+      if (kDebugMode) debugPrint('Starting Google sign-in process...');
       final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        print('Google sign-in cancelled by user');
+        if (kDebugMode) debugPrint('Google sign-in cancelled by user');
         return null;
       }
 
-      print('Getting Google authentication credentials...');
+      if (kDebugMode) debugPrint('Getting Google authentication credentials...');
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
-      print('Signing in with Firebase...');
+      if (kDebugMode) debugPrint('Signing in with Firebase...');
       final UserCredential userCredential = await _auth.signInWithCredential(credential);
       
       if (userCredential.user != null) {
-        print('Firebase sign-in successful for user: ${userCredential.user!.email}');
+        if (kDebugMode) debugPrint('Firebase sign-in successful for user: ${userCredential.user!.email}');
         
         // Store ID token immediately
         await _storeIdToken(userCredential.user!);
@@ -104,13 +105,15 @@ class WebAuthService {
         // Attempt backend validation but don't fail if it doesn't work
         try {
           final success = await _userDataService.storeAndValidateUser(userCredential.user!);
-          if (success) {
-            print('User successfully validated with backend');
-          } else {
-            print('Backend validation failed, but Firebase auth succeeded - user can still use the app');
+          if (kDebugMode) {
+            if (success) {
+              debugPrint('User successfully validated with backend');
+            } else {
+              debugPrint('Backend validation failed, but Firebase auth succeeded - user can still use the app');
+            }
           }
         } catch (e) {
-          print('Backend validation error (non-fatal): $e');
+          if (kDebugMode) debugPrint('Backend validation error (non-fatal): $e');
           // Continue with authentication even if backend validation fails
         }
         
@@ -122,7 +125,7 @@ class WebAuthService {
       
       return null;
     } catch (e) {
-      print('Google sign in error: $e');
+      if (kDebugMode) debugPrint('Google sign in error: $e');
       return null;
     }
   }
@@ -132,30 +135,30 @@ class WebAuthService {
     try {
       final idToken = await user.getIdToken();
       if (idToken != null) {
-        html.window.localStorage[_idTokenKey] = idToken;
-        print('ID Token stored successfully');
+        web.window.localStorage[_idTokenKey] = idToken;
+        if (kDebugMode) debugPrint('ID Token stored successfully');
       }
     } catch (e) {
-      print('Error storing ID token: $e');
+      if (kDebugMode) debugPrint('Error storing ID token: $e');
     }
   }
 
   /// Clear ID Token from localStorage
   Future<void> _clearIdToken() async {
     try {
-      html.window.localStorage.remove(_idTokenKey);
-      print('ID Token cleared');
+      web.window.localStorage.removeItem(_idTokenKey);
+      if (kDebugMode) debugPrint('ID Token cleared');
     } catch (e) {
-      print('Error clearing ID token: $e');
+      if (kDebugMode) debugPrint('Error clearing ID token: $e');
     }
   }
 
   /// Get stored ID Token from localStorage
   Future<String?> getIdToken() async {
     try {
-      return html.window.localStorage[_idTokenKey];
+      return web.window.localStorage[_idTokenKey];
     } catch (e) {
-      print('Error reading ID token: $e');
+      if (kDebugMode) debugPrint('Error reading ID token: $e');
       return null;
     }
   }
@@ -167,7 +170,7 @@ class WebAuthService {
       if (user != null) {
         final idToken = await user.getIdToken(true); // Force refresh
         if (idToken != null) {
-          html.window.localStorage[_idTokenKey] = idToken;
+          web.window.localStorage[_idTokenKey] = idToken;
           return idToken;
         }
       }

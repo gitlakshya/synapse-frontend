@@ -143,7 +143,7 @@ class FirebaseAuthService {
         await _storageService.syncUserData(serverData, 'profile');
       }
     } catch (e) {
-      print('Sync error: $e');
+      debugPrint('Sync error: $e');
     }
   }
 

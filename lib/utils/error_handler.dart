@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 // We'll get the navigatorKey from the current context
 class ErrorHandler {
   static void handleError(dynamic error, {String? context}) {
-    print('Error in $context: $error');
+    if (kDebugMode) debugPrint('Error in $context: $error');
     
     if (error is NetworkException) {
       _showNetworkError();

@@ -53,6 +53,10 @@ app.*.map.json
 # Firebase config files (if using local config)
 firebase_options_local.dart
 
+# Firebase cache and hosting files
+.firebase/
+.firebaserc.backup
+
 # Credentials and secrets
 credentials/
 secrets/

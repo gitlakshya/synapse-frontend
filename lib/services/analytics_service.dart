@@ -1,13 +1,13 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class AnalyticsService {
   static const _analyticsKey = 'travel_analytics';
 
   static Future<TravelAnalytics> getTravelAnalytics() async {
     try {
-      final analyticsJson = html.window.localStorage[_analyticsKey];
+      final analyticsJson = web.window.localStorage.getItem(_analyticsKey);
       if (analyticsJson != null) {
         return TravelAnalytics.fromJson(json.decode(analyticsJson));
       }
@@ -23,7 +23,7 @@ class AnalyticsService {
     analytics.totalSpent += trip.totalCost;
     analytics.totalTrips++;
     
-    html.window.localStorage[_analyticsKey] = json.encode(analytics.toJson());
+    web.window.localStorage.setItem(_analyticsKey, json.encode(analytics.toJson()));
   }
 
   static Future<PriceAnalytics> getPriceAnalytics(String destination) async {

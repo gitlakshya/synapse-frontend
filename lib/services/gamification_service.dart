@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class GamificationService {
   static const _userStatsKey = 'user_stats';
@@ -9,7 +9,7 @@ class GamificationService {
 
   static Future<UserStats> getUserStats() async {
     try {
-      final statsJson = html.window.localStorage[_userStatsKey];
+      final statsJson = web.window.localStorage.getItem(_userStatsKey);
       if (statsJson != null) {
         return UserStats.fromJson(json.decode(statsJson));
       }
@@ -20,7 +20,7 @@ class GamificationService {
   }
 
   static Future<void> updateUserStats(UserStats stats) async {
-    html.window.localStorage[_userStatsKey] = json.encode(stats.toJson());
+    web.window.localStorage.setItem(_userStatsKey, json.encode(stats.toJson()));
   }
 
   static Future<void> awardPoints(int points, String reason) async {
@@ -35,7 +35,7 @@ class GamificationService {
 
   static Future<List<Achievement>> getAchievements() async {
     try {
-      final achievementsJson = html.window.localStorage[_achievementsKey];
+      final achievementsJson = web.window.localStorage.getItem(_achievementsKey);
       if (achievementsJson != null) {
         final List<dynamic> achievementsList = json.decode(achievementsJson);
         return achievementsList.map((a) => Achievement.fromJson(a)).toList();
@@ -52,12 +52,12 @@ class GamificationService {
     achievement.isUnlocked = true;
     achievement.unlockedAt = DateTime.now();
     
-    html.window.localStorage[_achievementsKey] = json.encode(achievements.map((a) => a.toJson()).toList());
+    web.window.localStorage.setItem(_achievementsKey, json.encode(achievements.map((a) => a.toJson()).toList()));
   }
 
   static Future<List<Challenge>> getActiveChallenges() async {
     try {
-      final challengesJson = html.window.localStorage[_challengesKey];
+      final challengesJson = web.window.localStorage.getItem(_challengesKey);
       if (challengesJson != null) {
         final List<dynamic> challengesList = json.decode(challengesJson);
         return challengesList.map((c) => Challenge.fromJson(c)).toList();
@@ -79,7 +79,7 @@ class GamificationService {
       await awardPoints(challenge.rewardPoints, 'Challenge completed: ${challenge.title}');
     }
     
-    html.window.localStorage[_challengesKey] = json.encode(challenges.map((c) => c.toJson()).toList());
+    web.window.localStorage.setItem(_challengesKey, json.encode(challenges.map((c) => c.toJson()).toList()));
   }
 
   static Future<Leaderboard> getLeaderboard() async {

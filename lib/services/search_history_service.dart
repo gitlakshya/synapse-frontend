@@ -1,21 +1,22 @@
 import 'dart:convert';
-import 'dart:html' as html;
+import 'package:web/web.dart' as web;
 
 class SearchHistoryService {
-  static const _key = 'search_history';
+  static const String _key = 'search_history';
   static const int _maxHistory = 10;
 
   static Future<List<String>> getSearchHistory() async {
     try {
-      final historyJson = html.window.localStorage[_key];
+      final historyJson = web.window.localStorage.getItem(_key);
       if (historyJson != null) {
-        final List<dynamic> historyList = json.decode(historyJson);
-        return historyList.cast<String>();
+        final historyList = jsonDecode(historyJson) as List;
+        return historyList.map((item) => item as String).toList();
       }
+      return [];
     } catch (e) {
-      print('Error reading search history: $e');
+      print('Error loading search history: $e');
+      return [];
     }
-    return [];
   }
 
   static Future<void> addToHistory(String searchTerm) async {
@@ -31,7 +32,7 @@ class SearchHistoryService {
         history.removeRange(_maxHistory, history.length);
       }
       
-      html.window.localStorage[_key] = json.encode(history);
+      web.window.localStorage.setItem(_key, jsonEncode(history));
     } catch (e) {
       print('Error saving search history: $e');
     }
@@ -39,7 +40,7 @@ class SearchHistoryService {
 
   static Future<void> clearHistory() async {
     try {
-      html.window.localStorage.remove(_key);
+      web.window.localStorage.removeItem(_key);
     } catch (e) {
       print('Error clearing search history: $e');
     }
@@ -49,9 +50,17 @@ class SearchHistoryService {
     try {
       final history = await getSearchHistory();
       history.remove(searchTerm);
-      html.window.localStorage[_key] = json.encode(history);
+      web.window.localStorage.setItem(_key, jsonEncode(history));
     } catch (e) {
       print('Error removing from search history: $e');
     }
+  }
+
+  static Future<List<String>> getSuggestions(String query) async {
+    final history = await getSearchHistory();
+    return history
+        .where((item) => item.toLowerCase().contains(query.toLowerCase()))
+        .take(5)
+        .toList();
   }
 }
