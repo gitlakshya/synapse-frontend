@@ -1,138 +1,118 @@
 import 'dart:convert';
-import 'dart:async';
 import 'package:http/http.dart' as http;
+import '../config.dart';
+import '../utils/http_cache.dart';
 
 class WeatherService {
-  static const String _apiKey = 'bd5e378503939ddaee76f12ad7a97608'; // Real OpenWeatherMap API key
-  static const String _baseUrl = 'https://api.openweathermap.org/data/2.5';
-  static const Duration _timeout = Duration(seconds: 10);
+  static const String _proxyUrl = 'https://your-backend.com/api/weather';
+  static const bool _useProxy = false;
+  final _cache = HttpCache();
 
-  Future<WeatherData> getWeather(String city) async {
+  Future<Map<String, dynamic>> getWeather(String city) async {
+    final cacheKey = 'weather_$city';
+    final cached = _cache.get(cacheKey);
+    if (cached != null) {
+      return json.decode(cached);
+    }
+
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/weather?q=$city&appid=$_apiKey&units=metric'),
-      ).timeout(_timeout);
+      final url = _useProxy
+          ? '$_proxyUrl?city=${Uri.encodeComponent(city)}'
+          : 'https://api.openweathermap.org/data/2.5/weather?q=${Uri.encodeComponent(city)}&appid=${Config.openWeatherApiKey}&units=metric';
       
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print('Weather API Success for $city: ${data['weather'][0]['main']}');
-        return WeatherData.fromJson(data);
-      } else if (response.statusCode == 404) {
-        throw WeatherException('City not found: $city');
-      } else if (response.statusCode == 401) {
-        throw WeatherException('Invalid API key');
-      } else {
-        throw WeatherException('Weather service unavailable (${response.statusCode})');
+        final result = _parseWeatherData(data);
+        _cache.set(cacheKey, json.encode(result), const Duration(minutes: 10));
+        return result;
       }
-    } on TimeoutException {
-      throw WeatherException('Request timeout - check internet connection');
-    } on FormatException {
-      throw WeatherException('Invalid response format');
     } catch (e) {
-      if (e is WeatherException) rethrow;
-      throw WeatherException('Network error: ${e.toString()}');
+      // Return mock data on error
     }
+    
+    return _getMockWeather(city);
   }
 
-  Future<List<WeatherData>> getForecast(String city, int days) async {
+  Future<Map<String, dynamic>> getWeatherByCoords(double lat, double lng, {DateTime? date}) async {
+    final cacheKey = 'weather_${lat}_${lng}_${date?.toIso8601String()}';
+    final cached = _cache.get(cacheKey);
+    if (cached != null) {
+      return json.decode(cached);
+    }
+
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/forecast?q=$city&appid=$_apiKey&units=metric&cnt=${days * 8}'),
-      );
+      final url = _useProxy
+          ? '$_proxyUrl?lat=$lat&lng=$lng'
+          : 'https://api.openweathermap.org/data/2.5/weather?lat=$lat&lon=$lng&appid=${Config.openWeatherApiKey}&units=metric';
       
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
+
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        return (data['list'] as List)
-            .map((item) => WeatherData.fromForecastJson(item))
-            .toList();
-      } else {
-        throw Exception('Failed to load forecast data');
+        final result = _parseWeatherData(data);
+        _cache.set(cacheKey, json.encode(result), const Duration(minutes: 10));
+        return result;
       }
     } catch (e) {
-      return List.generate(days, (index) => WeatherData.mock(city));
+      // Return mock data on error
     }
-  }
-}
-
-class WeatherData {
-  final String city;
-  final double temperature;
-  final String condition;
-  final String description;
-  final int humidity;
-  final double windSpeed;
-  final String icon;
-  final DateTime date;
-
-  WeatherData({
-    required this.city,
-    required this.temperature,
-    required this.condition,
-    required this.description,
-    required this.humidity,
-    required this.windSpeed,
-    required this.icon,
-    required this.date,
-  });
-
-  factory WeatherData.fromJson(Map<String, dynamic> json) {
-    return WeatherData(
-      city: json['name'],
-      temperature: json['main']['temp'].toDouble(),
-      condition: json['weather'][0]['main'],
-      description: json['weather'][0]['description'],
-      humidity: json['main']['humidity'],
-      windSpeed: json['wind']['speed'].toDouble(),
-      icon: json['weather'][0]['icon'],
-      date: DateTime.now(),
-    );
+    
+    return _getMockWeatherByCoords(lat, lng, date);
   }
 
-  factory WeatherData.fromForecastJson(Map<String, dynamic> json) {
-    return WeatherData(
-      city: '',
-      temperature: json['main']['temp'].toDouble(),
-      condition: json['weather'][0]['main'],
-      description: json['weather'][0]['description'],
-      humidity: json['main']['humidity'],
-      windSpeed: json['wind']['speed'].toDouble(),
-      icon: json['weather'][0]['icon'],
-      date: DateTime.fromMillisecondsSinceEpoch(json['dt'] * 1000),
-    );
+  Map<String, dynamic> _parseWeatherData(Map<String, dynamic> data) {
+    final temp = data['main']['temp'].round();
+    final condition = data['weather'][0]['main'];
+    final icon = data['weather'][0]['icon'];
+    
+    return {
+      'temperature': '$temp°C',
+      'condition': condition,
+      'description': data['weather'][0]['description'],
+      'icon': icon,
+      'suggestion': _getSuggestion(temp, condition),
+    };
   }
 
-  factory WeatherData.mock(String city) {
-    return WeatherData(
-      city: city,
-      temperature: 25.0,
-      condition: 'Clear',
-      description: 'Clear sky',
-      humidity: 60,
-      windSpeed: 5.0,
-      icon: '01d',
-      date: DateTime.now(),
-    );
+  String _getSuggestion(int temp, String condition) {
+    if (temp > 35) return 'Very hot! Best time: Early morning (6-9 AM) or evening (6-8 PM)';
+    if (temp > 30) return 'Hot weather. Best time to explore: 9 AM–6 PM with breaks';
+    if (temp < 10) return 'Cold weather. Best time: 11 AM–4 PM when it\'s warmest';
+    if (condition.toLowerCase().contains('rain')) return 'Rainy day. Carry umbrella. Indoor activities recommended';
+    if (condition.toLowerCase().contains('cloud')) return 'Pleasant weather. Best time: 9 AM–6 PM';
+    return 'Perfect weather! Best time to explore: 9 AM–6 PM';
   }
 
-  String get emoji {
-    switch (condition.toLowerCase()) {
-      case 'clear': return '☀️';
-      case 'clouds': return '☁️';
-      case 'rain': return '🌧️';
-      case 'snow': return '❄️';
-      case 'thunderstorm': return '⛈️';
-      case 'drizzle': return '🌦️';
-      case 'mist':
-      case 'fog': return '🌫️';
-      default: return '🌤️';
-    }
+  Map<String, dynamic> _getMockWeather(String city) {
+    final hash = city.hashCode.abs();
+    final temp = 20 + (hash % 15);
+    final conditions = ['Clear', 'Clouds', 'Rain', 'Sunny'];
+    final condition = conditions[hash % conditions.length];
+    
+    return {
+      'temperature': '$temp°C',
+      'condition': condition,
+      'description': condition.toLowerCase(),
+      'icon': '01d',
+      'suggestion': _getSuggestion(temp, condition),
+    };
   }
-}
 
-class WeatherException implements Exception {
-  final String message;
-  WeatherException(this.message);
-  
-  @override
-  String toString() => 'WeatherException: $message';
+  Map<String, dynamic> _getMockWeatherByCoords(double lat, double lng, DateTime? date) {
+    final hash = (lat * 1000 + lng * 1000).toInt().abs();
+    final dayOffset = date != null ? date.difference(DateTime.now()).inDays : 0;
+    final temp = 18 + (hash % 18) + (dayOffset % 5);
+    final conditions = ['Clear', 'Clouds', 'Sunny', 'Rain'];
+    final condition = conditions[(hash + dayOffset) % conditions.length];
+    
+    return {
+      'temperature': '$temp°C',
+      'condition': condition,
+      'description': condition.toLowerCase(),
+      'icon': condition == 'Clear' || condition == 'Sunny' ? '01d' : condition == 'Clouds' ? '02d' : '10d',
+      'suggestion': _getSuggestion(temp, condition),
+    };
+  }
 }

@@ -1,178 +1,149 @@
+/// Chat service - Handles AI chat message processing with backend integration
+/// 
+/// Backend Integration: POST /api/v1/chat
+/// Request: {message, context, sessionId (auto-injected)}
+/// Response: {success, data: {response, suggestions, followUpQuestions}}
+import 'package:flutter/foundation.dart';
 import 'dart:convert';
-import '../config/api_config.dart';
-import 'authenticated_http_client.dart';
-import 'firebase_auth_service.dart';
+import 'api_middleware.dart';
 
-class ChatService {
-  static ChatService? _instance;
-  late String _backendUrl;
-  late AuthenticatedHttpClient _httpClient;
-  late FirebaseAuthService _authService;
-  
-  ChatService._internal() {
-    _backendUrl = ApiConfig.baseUrl;
-    _httpClient = AuthenticatedHttpClient();
-    _authService = FirebaseAuthService();
-    print('ChatService initialized with backend URL: $_backendUrl');
-  }
-  
-  static ChatService get instance {
-    _instance ??= ChatService._internal();
-    return _instance!;
-  }
-  
-  bool get isConfigured => _backendUrl.isNotEmpty;
-  
-  Future<String> getResponse(String message, {
-    String? destination, 
-    double? budget, 
-    List<String>? conversationHistory
-  }) async {
-    if (!isConfigured) {
-      print('Backend URL not configured - using fallback');
-      return _getFallbackResponse(message);
-    }
-    
+/// Message model for chat
+class ChatMessage {
+  final String id;
+  final String sender; // 'user' or 'ai'
+  final String message;
+  final DateTime timestamp;
+  final Map<String, dynamic>? metadata;
+
+  ChatMessage({
+    required this.id,
+    required this.sender,
+    required this.message,
+    required this.timestamp,
+    this.metadata,
+  });
+
+  /// Convert to JSON for API/Firestore
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'sender': sender,
+    'message': message,
+    'timestamp': timestamp.toIso8601String(),
+    if (metadata != null) 'metadata': metadata,
+  };
+
+  /// Create from JSON
+  factory ChatMessage.fromJson(Map<String, dynamic> json) => ChatMessage(
+    id: json['id'],
+    sender: json['sender'],
+    message: json['message'],
+    timestamp: DateTime.parse(json['timestamp']),
+    metadata: json['metadata'],
+  );
+}
+
+/// Chat service interface
+abstract class IChatService {
+  Future<String> sendMessage(String message, {String? userId, String? sessionId});
+  Future<List<ChatMessage>> getChatHistory({String? userId, String? sessionId});
+  Future<void> clearHistory({String? userId, String? sessionId});
+}
+
+/// Chat Service with Backend API Integration via ApiMiddleware
+class ChatService implements IChatService {
+  final List<ChatMessage> _messageCache = [];
+
+  @override
+  Future<String> sendMessage(String message, {String? userId, String? sessionId}) async {
     try {
-      print('Sending request to backend chat API...');
-      
-      final requestBody = {
-        'message': message,
-        'context': {
-          if (destination != null && destination.isNotEmpty) 'destination': destination,
-          if (budget != null && budget > 0) 'budget': budget,
-          if (conversationHistory != null && conversationHistory.isNotEmpty) 
-            'conversationHistory': conversationHistory,
-        }
-      };
-      
-      print('Request body: ${jsonEncode(requestBody)}');
-      
-      // Use AuthenticatedHttpClient which handles auth automatically
-      final response = await _httpClient.post(
-        '$_backendUrl${ApiConfig.chatEndpoint}',
-        body: requestBody,
-        includeAuth: true, // This ensures proper authentication handling
-        timeout: const Duration(seconds: 45), // Extended timeout for chat API
+      // Use ApiMiddleware which handles auth and session automatically
+      final response = await ApiMiddleware.sendChatMessage(
+        message: message,
+        context: 'itinerary_planning',
       );
-      
-      print('Response status: ${response.statusCode}');
-      
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        final responseText = responseData['response'] ?? responseData['message'] ?? '';
+
+      if (response['success'] == true) {
+        final data = response['data'];
+        final aiResponse = data['response'] ?? data['message'] ?? 'I understand. How can I help you plan your trip?';
         
-        if (responseText.isNotEmpty) {
-          print('Backend response received: ${responseText.substring(0, responseText.length > 50 ? 50 : responseText.length)}...');
-          return responseText;
-        } else {
-          print('Empty response from backend');
-          return 'Sorry, I couldn\'t generate a response. Please try again.';
-        }
-      } else if (response.statusCode == 401) {
-        print('Authentication failed: ${response.body}');
-        return 'Authentication failed. Please log in again to use the chat feature.';
-      } else if (response.statusCode == 403) {
-        print('Access forbidden: ${response.body}');
-        return 'Access denied. You don\'t have permission to use this feature.';
+        // Cache message locally
+        _messageCache.add(ChatMessage(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          sender: 'user',
+          message: message,
+          timestamp: DateTime.now(),
+        ));
+        
+        _messageCache.add(ChatMessage(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          sender: 'ai',
+          message: aiResponse,
+          timestamp: DateTime.now(),
+          metadata: {
+            'suggestions': data['suggestions'],
+            'followUpQuestions': data['followUpQuestions'],
+          },
+        ));
+
+        return aiResponse;
       } else {
-        print('Backend API error: ${response.statusCode} - ${response.body}');
-        return 'API Error: ${response.statusCode}. Using fallback response: ${_getFallbackResponse(message)}';
+        throw Exception(response['error'] ?? 'Chat service unavailable');
       }
     } catch (e) {
       print('Chat API error: $e');
-      if (e.toString().contains('timeout')) {
-        return 'Connection timeout. Please check your internet connection and try again.';
-      } else if (e.toString().contains('SocketException') || e.toString().contains('NetworkException')) {
-        return 'Network error. Please check your internet connection and try again.';
-      } else {
-        return 'Connection Error: ${e.toString()}. Using fallback response: ${_getFallbackResponse(message)}';
-      }
-    }
-  }
-  
-  /// Check if user is authenticated for chat API access
-  Future<bool> isUserAuthenticated() async {
-    try {
-      return await _authService.isAuthenticated();
-    } catch (e) {
-      print('Error checking authentication status: $e');
-      return false;
-    }
-  }
-  
-  /// Get authentication status and token validity
-  Future<Map<String, dynamic>> getAuthStatus() async {
-    try {
-      final isAuth = await _authService.isAuthenticated();
-      final token = await _authService.getToken();
+      // Fallback to mock on error
+      await Future.delayed(const Duration(milliseconds: 800));
+      final mockResponse = _getMockResponse(message.toLowerCase());
       
-      return {
-        'isAuthenticated': isAuth,
-        'hasToken': token != null && token.isNotEmpty,
-        'backendUrl': _backendUrl,
-        'chatEndpoint': ApiConfig.chatEndpoint,
-        'usingAuthenticatedClient': true, // Now using the proper authenticated client
-      };
-    } catch (e) {
-      print('Error getting auth status: $e');
-      return {
-        'isAuthenticated': false,
-        'hasToken': false,
-        'error': e.toString(),
-        'backendUrl': _backendUrl,
-        'chatEndpoint': ApiConfig.chatEndpoint,
-        'usingAuthenticatedClient': true,
-      };
-    }
-  }
-  
-  /// Test chat API connectivity and authentication
-  Future<Map<String, dynamic>> testConnection() async {
-    try {
-      final response = await _httpClient.post(
-        '$_backendUrl${ApiConfig.chatEndpoint}',
-        body: {
-          'message': 'Connection test',
-          'context': {'isTest': true}
-        },
-        includeAuth: true,
-      ).timeout(const Duration(seconds: 10));
+      _messageCache.add(ChatMessage(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        sender: 'user',
+        message: message,
+        timestamp: DateTime.now(),
+      ));
       
-      return {
-        'success': response.statusCode == 200,
-        'statusCode': response.statusCode,
-        'authenticated': response.statusCode != 401,
-        'message': response.statusCode == 200 
-            ? 'Chat API connection successful' 
-            : 'Chat API returned status ${response.statusCode}',
-      };
-    } catch (e) {
-      return {
-        'success': false,
-        'error': e.toString(),
-        'message': 'Failed to connect to chat API',
-      };
+      _messageCache.add(ChatMessage(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        sender: 'ai',
+        message: mockResponse,
+        timestamp: DateTime.now(),
+      ));
+      
+      return mockResponse;
     }
   }
-  
-  String _getFallbackResponse(String message) {
-    final lowerMessage = message.toLowerCase();
-    
-    if (lowerMessage.contains('weather')) {
-      return '🌤️ I recommend checking the weather forecast before your trip. Pack accordingly and have indoor alternatives ready!';
-    } else if (lowerMessage.contains('food') || lowerMessage.contains('restaurant')) {
-      return '🍽️ Try local street food and authentic restaurants. Ask locals for recommendations - they know the best hidden gems!';
-    } else if (lowerMessage.contains('budget') || lowerMessage.contains('money')) {
-      return '💰 Book in advance, use local transport, and try local eateries to save money. Negotiate prices at markets!';
-    } else if (lowerMessage.contains('place') || lowerMessage.contains('destination')) {
-      return '🗺️ Research your destination beforehand. Look for must-visit spots, local customs, and hidden attractions!';
-    } else if (lowerMessage.contains('transport') || lowerMessage.contains('travel')) {
-      return '🚗 Compare transport options - trains, buses, and local transport. Book early for better deals!';
-    } else if (lowerMessage.contains('hotel') || lowerMessage.contains('stay')) {
-      return '🏨 Check reviews, location, and amenities. Consider homestays for authentic experiences!';
+
+  @override
+  Future<List<ChatMessage>> getChatHistory({String? userId, String? sessionId}) async {
+    // Return cached messages
+    // TODO: Fetch from backend or Firestore for persistence
+    return List.from(_messageCache);
+  }
+
+  @override
+  Future<void> clearHistory({String? userId, String? sessionId}) async {
+    _messageCache.clear();
+    // TODO: Clear from backend/Firestore
+  }
+
+  /// Mock response logic - Fallback when backend unavailable
+  String _getMockResponse(String message) {
+    if (message.contains('budget') || message.contains('cost') || message.contains('price')) {
+      return 'I can help you plan a budget-friendly trip! The average cost depends on your destination and duration. Would you like suggestions for affordable destinations?';
+    } else if (message.contains('weather') || message.contains('climate')) {
+      return 'I can provide weather information for your destination. Which city are you planning to visit?';
+    } else if (message.contains('hotel') || message.contains('accommodation')) {
+      return 'I can recommend hotels based on your budget and preferences. What\'s your destination and preferred price range?';
+    } else if (message.contains('food') || message.contains('restaurant')) {
+      return 'I\'d be happy to suggest local cuisine and restaurants! Which destination are you interested in?';
+    } else if (message.contains('activity') || message.contains('things to do')) {
+      return 'There are many exciting activities depending on your destination! Are you interested in adventure, culture, relaxation, or nightlife?';
+    } else if (message.contains('hello') || message.contains('hi')) {
+      return 'Hello! I\'m here to help you plan an amazing trip. What would you like to know?';
+    } else if (message.contains('thank')) {
+      return 'You\'re welcome! Feel free to ask me anything else about your trip planning.';
     } else {
-      return '🤖 I\'m here to help with your travel planning! Ask me about destinations, food, budget tips, or activities. (Backend AI currently unavailable - using local responses)';
+      return 'That\'s a great question! I can help you with trip planning, budget estimates, destination recommendations, weather info, and activity suggestions. What would you like to explore?';
     }
   }
 }

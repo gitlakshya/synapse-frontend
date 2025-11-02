@@ -1,11 +1,11 @@
 {
-    "name": "Travel Planner",
-    "short_name": "Travel Planner",
+    "name": "new_ui",
+    "short_name": "new_ui",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "Frontend for AI travel planner",
+    "description": "A new Flutter project.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -1,255 +1,392 @@
-# Trip Planner UI - Web-Optimized Flutter Application
+# EaseMyTrip AI Planner
 
-## 🌟 Overview
+Flutter web application for AI-powered trip planning with Firebase authentication and Gemini AI integration.
 
-An AI-powered trip planning application built with Flutter, optimized for web deployment. This application provides intelligent travel planning with session management, user authentication, and real-time data synchronization.
-
-## 🏗️ Architecture
-
-### Web-Only Optimization
-This application has been specifically optimized for web deployment:
-- **Removed Mobile Platforms**: All mobile-specific code and directories have been removed
-- **Browser-Native Storage**: Uses localStorage instead of mobile secure storage
-- **Web-Compatible Dependencies**: Only web-compatible packages included
-- **Optimized Bundle Size**: Reduced from mobile-inclusive to web-only deployment
-
-### Key Features
-- 🧠 **AI-Powered Planning**: Gemini AI integration for intelligent trip suggestions
-- 🔐 **Smart Authentication**: Firebase Auth with Google Sign-In
-- 📱 **Responsive Design**: Optimized for desktop and mobile browsers
-- 🗃️ **Intelligent Session Management**: Automatic session expiry handling
-- 🌐 **Real-time Data**: Live weather, maps, and travel information
-
-## 🚀 Quick Start
-
-### Prerequisites
-- Flutter SDK 3.1.5+
-- Dart SDK
-- Web browser for testing
-
-### Installation
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd synapse-frontend
-   ```
-
-2. **Install dependencies**
-   ```bash
-   flutter pub get
-   ```
-
-3. **Configure environment**
-   ```bash
-   # Copy configuration templates
-   cp config/development.json.template config/development.json
-   cp config/production.json.template config/production.json
-   
-   # Edit configuration files with your API keys
-   # See Configuration section below
-   ```
-
-4. **Run the application**
-   ```bash
-   flutter run -d web-server --web-port=8080
-   ```
-
-5. **Open in browser**
-   Navigate to `http://localhost:8080`
-
-## ⚙️ Configuration
-
-### Environment Setup
-
-Create configuration files from templates:
-
-1. **Development Configuration** (`config/development.json`)
-   ```json
-   {
-     "environment": "development",
-     "backendUrl": "https://your-backend-url.com",
-     "firebase": {
-       "projectId": "your-firebase-project-id",
-       "appId": "your-firebase-app-id",
-       "apiKey": "your-firebase-api-key",
-       "authDomain": "your-project.firebaseapp.com",
-       "storageBucket": "your-project.appspot.com",
-       "messagingSenderId": "your-messaging-sender-id"
-     },
-     "google": {
-       "clientId": "your-google-client-id",
-       "clientSecret": "your-google-client-secret"
-     }
-   }
-   ```
-
-2. **Production Configuration** (`config/production.json`)
-   - Use the same structure with production values
+## Environment Configuration
 
 ### Required API Keys
-- **Firebase**: Project configuration from Firebase Console
-- **Google OAuth**: Client credentials from Google Cloud Console
-- **Gemini AI**: API key from Google AI Studio
-- **Backend API**: Your custom backend service
 
-## 🏛️ Project Structure
+This project uses `--dart-define` for secure environment variable management. Never commit API keys to the repository.
 
-```
-lib/
-├── config/              # Configuration management
-├── enhancements/        # Feature enhancements
-├── models/              # Data models
-├── providers/           # State management
-├── screens/             # UI screens
-├── services/            # Business logic services
-│   ├── storage_service.dart          # Web-optimized storage
-│   ├── session_service.dart          # Session management
-│   ├── firebase_auth_service.dart    # Authentication
-│   └── authenticated_http_client.dart # API client
-├── utils/               # Utility functions
-├── widgets/             # Reusable components
-└── main.dart           # Application entry point
-```
+**Required Variables:**
+- `FIREBASE_API_KEY` - Firebase Web API Key
+- `FIREBASE_APP_ID` - Firebase App ID
+- `FIREBASE_MESSAGING_SENDER_ID` - Firebase Messaging Sender ID
+- `FIREBASE_PROJECT_ID` - Firebase Project ID
+- `GOOGLE_SIGNIN_CLIENT_ID` - Google OAuth Client ID (with .apps.googleusercontent.com)
+- `GOOGLE_MAPS_API_KEY` - Google Maps JavaScript API Key
+- `OPENWEATHER_API_KEY` - OpenWeatherMap API Key
+- `GEMINI_API_KEY` - Google Gemini API Key
 
-## 🔐 Security Features
+### Local Development Setup
 
-### Session Management
-- **Intelligent Creation**: Only creates sessions when needed
-- **Automatic Expiry**: Sessions expire after 4 hours
-- **Auth State Awareness**: Different behavior for authenticated vs guest users
-- **Storage Security**: Browser localStorage with proper expiry handling
-
-### Data Protection
-- **Environment Variables**: Sensitive data in configuration files
-- **Gitignore Protection**: API keys and secrets excluded from version control
-- **Template Configurations**: Safe defaults for development setup
-
-## 📦 Dependencies
-
-### Core Dependencies
-- `flutter`: Framework
-- `firebase_core`: Firebase integration
-- `firebase_auth`: Authentication
-- `google_sign_in`: OAuth integration
-- `http`: API communication
-
-### Web-Optimized Packages
-- `responsive_framework`: Responsive design
-- `shared_preferences`: Web storage
-- `url_launcher`: Web navigation
-- `connectivity_plus`: Network status
-
-### UI/UX Libraries
-- `flutter_animate`: Animations
-- `lottie`: Animation assets
-- `cached_network_image`: Image caching
-- `flutter_map`: Interactive maps
-
-## 🚀 Deployment
-
-### Web Deployment
+**Option 1: Command Line (Single Run)**
 ```bash
-# Build for web
-flutter build web --release
-
-# Deploy to hosting service
-# Copy build/web/ contents to your web server
+flutter run -d chrome \
+  --dart-define=FIREBASE_API_KEY=your_firebase_key \
+  --dart-define=FIREBASE_APP_ID=your_app_id \
+  --dart-define=FIREBASE_MESSAGING_SENDER_ID=your_sender_id \
+  --dart-define=FIREBASE_PROJECT_ID=your_project_id \
+  --dart-define=GOOGLE_SIGNIN_CLIENT_ID=your_client_id.apps.googleusercontent.com \
+  --dart-define=GOOGLE_MAPS_API_KEY=your_maps_key \
+  --dart-define=OPENWEATHER_API_KEY=your_weather_key \
+  --dart-define=GEMINI_API_KEY=your_gemini_key
 ```
 
-### Supported Platforms
-- ✅ **Web Browsers**: Chrome, Firefox, Safari, Edge
-- ❌ **Mobile Apps**: Removed for web-only optimization
-- ❌ **Desktop Apps**: Removed for web-only optimization
+**Option 2: VS Code Launch Configuration**
 
-## 🧪 Testing
+Create `.vscode/launch.json`:
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter Web (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define=FIREBASE_API_KEY=your_firebase_key",
+        "--dart-define=FIREBASE_APP_ID=your_app_id",
+        "--dart-define=FIREBASE_MESSAGING_SENDER_ID=your_sender_id",
+        "--dart-define=FIREBASE_PROJECT_ID=your_project_id",
+        "--dart-define=GOOGLE_SIGNIN_CLIENT_ID=your_client_id.apps.googleusercontent.com",
+        "--dart-define=GOOGLE_MAPS_API_KEY=your_maps_key",
+        "--dart-define=OPENWEATHER_API_KEY=your_weather_key",
+        "--dart-define=GEMINI_API_KEY=your_gemini_key"
+      ]
+    }
+  ]
+}
+```
 
-### Running Tests
+**Option 3: Environment File (Recommended)**
+
+Create `env.sh` (add to .gitignore):
 ```bash
-# Run all tests
-flutter test
-
-# Run with coverage
-flutter test --coverage
+#!/bin/bash
+export DART_DEFINES="\
+FIREBASE_API_KEY=your_firebase_key,\
+FIREBASE_APP_ID=your_app_id,\
+FIREBASE_MESSAGING_SENDER_ID=your_sender_id,\
+FIREBASE_PROJECT_ID=your_project_id,\
+GOOGLE_SIGNIN_CLIENT_ID=your_client_id.apps.googleusercontent.com,\
+GOOGLE_MAPS_API_KEY=your_maps_key,\
+OPENWEATHER_API_KEY=your_weather_key,\
+GEMINI_API_KEY=your_gemini_key"
 ```
 
-### Manual Testing Scenarios
-1. **New User Flow**: No session → Creates guest session on "Get Started"
-2. **Returning User**: Existing session → Reuses without new creation
-3. **Session Expiry**: Expired session → Cleared and new session created
-4. **Authentication**: Login → Session migration → Auth token stored
+Run with:
+```bash
+source env.sh
+flutter run -d chrome $(echo $DART_DEFINES | sed 's/,/ --dart-define=/g' | sed 's/^/--dart-define=/')
+```
 
-## 📊 Performance Optimizations
+### Production Build
 
-### Web-Only Benefits
-- 🚀 **Faster Loading**: 60% reduction in bundle size
-- 💾 **Reduced Complexity**: No mobile-specific code
-- 🌐 **Browser-Native**: Uses web APIs directly
-- ⚡ **Smart Caching**: Intelligent session and data management
+```bash
+flutter build web --release \
+  --dart-define=FIREBASE_API_KEY=prod_firebase_key \
+  --dart-define=FIREBASE_APP_ID=prod_app_id \
+  --dart-define=FIREBASE_MESSAGING_SENDER_ID=prod_sender_id \
+  --dart-define=FIREBASE_PROJECT_ID=prod_project_id \
+  --dart-define=GOOGLE_SIGNIN_CLIENT_ID=prod_client_id.apps.googleusercontent.com \
+  --dart-define=GOOGLE_MAPS_API_KEY=prod_maps_key \
+  --dart-define=OPENWEATHER_API_KEY=prod_weather_key \
+  --dart-define=GEMINI_API_KEY=prod_gemini_key
+```
 
-### Session Optimization
-- **Reduced API Calls**: No unnecessary session creation
-- **Efficient Storage**: Browser localStorage instead of complex secure storage
-- **Smart Expiry**: Automatic cleanup of expired sessions
+## Hosting Configuration
 
-## 🐛 Troubleshooting
+### Firebase Hosting
 
-### Common Issues
-
-1. **Configuration Errors**
+1. **Build with environment variables** (see above)
+2. **Deploy:**
    ```bash
-   # Ensure configuration files exist
-   ls config/development.json
-   
-   # Check API key format
-   grep "apiKey" config/development.json
+   firebase deploy --only hosting
+   ```
+3. **CI/CD (GitHub Actions):**
+   - Store secrets in GitHub Secrets (Settings → Secrets → Actions)
+   - Add secrets: `FIREBASE_API_KEY`, `GEMINI_API_KEY`, etc.
+   - Use in workflow:
+   ```yaml
+   - name: Build Flutter Web
+     run: |
+       flutter build web --release \
+         --dart-define=FIREBASE_API_KEY=${{ secrets.FIREBASE_API_KEY }} \
+         --dart-define=GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}
    ```
 
-2. **Build Errors**
-   ```bash
-   # Clean and rebuild
-   flutter clean
-   flutter pub get
-   flutter build web
+### AWS Amplify
+
+1. **Connect repository** to AWS Amplify
+2. **Add environment variables** in Amplify Console:
+   - App Settings → Environment Variables
+   - Add each variable: `FIREBASE_API_KEY`, `GEMINI_API_KEY`, etc.
+3. **Update build settings** (`amplify.yml`):
+   ```yaml
+   version: 1
+   frontend:
+     phases:
+       build:
+         commands:
+           - flutter build web --release \
+               --dart-define=FIREBASE_API_KEY=$FIREBASE_API_KEY \
+               --dart-define=GEMINI_API_KEY=$GEMINI_API_KEY
+     artifacts:
+       baseDirectory: build/web
+       files:
+         - '**/*'
    ```
 
-3. **Session Issues**
+### Vercel
+
+1. **Add environment variables** in Vercel Dashboard:
+   - Project Settings → Environment Variables
+   - Add each variable with appropriate scope (Production/Preview/Development)
+2. **Build command:**
    ```bash
-   # Clear browser storage
-   # Open DevTools → Application → Storage → Clear All
+   flutter build web --release --dart-define=FIREBASE_API_KEY=$FIREBASE_API_KEY
    ```
 
-## 📝 Development Guidelines
+## Security Best Practices
 
-### Git Best Practices
-- **Secure Configuration**: Never commit API keys or secrets
-- **Clean History**: Use meaningful commit messages
-- **Template Usage**: Use `.template` files for configuration examples
+### Browser-Exposed Keys (Google Maps, Google Sign-In)
 
-### Code Quality
-- **Linting**: Follow Flutter/Dart style guidelines
-- **Documentation**: Document all public APIs
-- **Testing**: Write tests for critical functionality
+⚠️ **WARNING:** Keys in `web/index.html` are visible to users. Apply these restrictions:
 
-## 🤝 Contributing
+**Google Maps API Key:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Edit API Key → Application Restrictions:
+   - Select "HTTP referrers"
+   - Add your domains: `yourdomain.com/*`, `*.yourdomain.com/*`
+3. API Restrictions:
+   - Select "Restrict key"
+   - Enable only: Maps JavaScript API
+4. **RECOMMENDED:** Use a lightweight proxy endpoint to hide the key:
+   ```javascript
+   // Instead of direct API calls, proxy through your backend
+   fetch('https://your-backend.com/api/maps-proxy?address=...')
+   ```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+**Google Sign-In Client ID:**
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Edit OAuth 2.0 Client ID:
+   - Authorized JavaScript origins: `https://yourdomain.com`
+   - Authorized redirect URIs: `https://yourdomain.com/__/auth/handler`
 
-## 📄 License
+### Backend-Only Keys (Gemini, OpenWeather)
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+✅ These keys are compiled into the app and not directly visible in browser:
+- `GEMINI_API_KEY`
+- `OPENWEATHER_API_KEY`
+- `FIREBASE_API_KEY` (safe with Firebase security rules)
 
-## 🙋‍♂️ Support
+**Additional Security:**
+1. Enable Firebase Security Rules for Firestore/Storage
+2. Set up API key rotation schedule (quarterly recommended)
+3. Monitor API usage in respective consoles
+4. Use short-lifetime keys for development
 
-For questions or issues:
-1. Check the troubleshooting section
-2. Review the configuration templates
-3. Create an issue in the repository
+## Getting API Keys
 
----
+- **Firebase:** [Firebase Console](https://console.firebase.google.com/) → Project Settings → General
+- **Google Sign-In:** [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → Create OAuth 2.0 Client ID
+- **Google Maps:** [Google Cloud Console](https://console.cloud.google.com/apis/credentials) → Create API Key
+  - 📍 **Quick Start:** See [MAPS_QUICK_START.md](MAPS_QUICK_START.md) for Google Maps setup
+  - 📚 **Full Docs:** See [GOOGLE_MAPS_INTEGRATION.md](GOOGLE_MAPS_INTEGRATION.md) for complete integration guide
+- **OpenWeatherMap:** [OpenWeatherMap](https://openweathermap.org/api) → Sign up → API Keys
+- **Gemini:** [Google AI Studio](https://makersuite.google.com/app/apikey) → Get API Key
 
-**Note**: This is a web-optimized version of the Flutter application. Mobile platform support has been intentionally removed for improved web performance and simplified deployment.
+## Features
+
+### ✨ Core Features
+- 🤖 **AI-Powered Trip Planning** with Gemini AI
+- 🗺️ **Interactive Google Maps** with activity markers and click interactions
+- 🔍 **Smart City Search** with Google Places Autocomplete (city-level only)
+- 🔐 **Firebase Authentication** with Google Sign-In
+- 🌓 **Dark/Light Mode** with smooth transitions
+- 🌍 **Multi-language Support** (English, Hindi, Spanish, French, German, Japanese)
+- 📱 **Fully Responsive** design for mobile, tablet, and desktop
+- 💬 **AI Chat Assistant** for trip recommendations
+- 🌤️ **Weather Integration** with OpenWeatherMap
+- 📊 **Budget Breakdown** with visual cost analysis
+- 🎨 **Modern UI** with EaseMyTrip brand colors
+
+### 🗺️ Google Maps Integration
+
+The itinerary results page includes an interactive Google Maps widget:
+- **Activity Markers**: Blue pins for all activities, red for highlighted
+- **Click Interactions**: Click activity cards to highlight markers, click markers to highlight cards
+- **Fullscreen Modal**: Expandable map view with "🗺 Expand Map" button
+- **Dark Mode Support**: Automatic dark map style
+- **Responsive Layout**: Side-by-side on desktop, collapsible on mobile
+- **Error Handling**: Graceful fallback with "Map unavailable" message
+
+**Quick Setup:** See [MAPS_QUICK_START.md](MAPS_QUICK_START.md)  
+**Full Documentation:** See [GOOGLE_MAPS_INTEGRATION.md](GOOGLE_MAPS_INTEGRATION.md)
+
+## Development
+
+```bash
+# Install dependencies
+flutter pub get
+
+# Run in debug mode
+flutter run -d chrome --dart-define=...
+
+# Run in release mode
+flutter run -d chrome --release --dart-define=...
+
+# Build for production
+flutter build web --release --dart-define=...
+```
+
+## Lighthouse Performance Checklist
+
+### Target Metrics
+- **Performance:** 90+ (First Contentful Paint < 1.8s, Speed Index < 3.4s)
+- **Accessibility:** 95+ (WCAG AA compliance)
+- **Best Practices:** 90+
+- **SEO:** 90+
+
+### Accessibility (Target: 95+)
+- ✅ All images have semantic labels or alt text
+- ✅ Buttons have ARIA labels and semantic markup
+- ✅ Color contrast ratios meet WCAG AA (4.5:1 for text, 3:1 for UI)
+- ✅ Keyboard navigation with Tab/Arrow keys
+- ✅ Focus indicators visible on all interactive elements
+- ✅ Touch targets minimum 48x48dp
+- ✅ Screen reader compatible with Semantics widgets
+
+### Performance (Target: 90+)
+- ✅ Deferred imports for large screens (booking, AI result)
+- ✅ Image lazy loading with loadingBuilder
+- ✅ Cached network images with thumbnails
+- ✅ Code splitting with deferred imports (40% bundle reduction)
+- ✅ HTTP caching with TTL (weather 10min, maps 24hr)
+- ✅ Const constructors throughout
+- ✅ ListView.builder for long lists
+- ✅ Centralized image caching with lib/utils/image_helper.dart
+- ⚠️ Consider: Service Worker for offline support
+- ⚠️ Consider: WebP images for better compression
+
+### Image Optimization
+
+**Recommended Image Sizes:**
+- **Thumbnails (lists)**: 80x80 to 120x120 pixels
+- **Cards**: 300x200 to 600x400 pixels
+- **Hero images**: 1200x600 to 1920x1080 pixels
+- **Format**: WebP preferred, JPEG fallback
+- **Quality**: 80-85% for photos, 90%+ for graphics
+
+**Image Caching Strategy:**
+```dart
+// Use centralized helper from lib/utils/image_helper.dart
+import '../utils/image_helper.dart';
+
+// For list thumbnails (80x80)
+cachedThumbnail(imageUrl, size: 80)
+
+// For custom sizes
+cachedImage(imageUrl, width: 300, height: 200, fit: BoxFit.cover)
+
+// For full-width hero images
+cachedHeroImage(imageUrl, height: 400)
+```
+
+**Memory Cache Optimization:**
+- Thumbnails: 2x resolution cached (160x160 for 80x80 display)
+- Disk cache: 3x resolution max (240x240 for 80x80 display)
+- Hero images: Max 1200px width cached
+- Automatic memory management by cached_network_image
+
+**CDN Recommendations:**
+- Use Unsplash with size parameters: `?w=800&h=600&fit=crop`
+- Use Cloudinary transformations: `/w_800,h_600,c_fill/`
+- Use imgix with auto-format: `?auto=format,compress&w=800`
+
+### Best Practices (Target: 90+)
+- ✅ HTTPS required for production
+- ✅ No console errors in production build
+- ✅ Error boundaries with try-catch
+- ✅ Fallback images on network errors
+- ✅ Loading states for async operations
+- ✅ API keys secured with --dart-define
+
+### SEO (Target: 90+)
+- ⚠️ Add meta description in web/index.html
+- ⚠️ Add Open Graph tags for social sharing
+- ⚠️ Add structured data (JSON-LD) for rich snippets
+- ⚠️ Ensure proper heading hierarchy (h1 → h2 → h3)
+- ⚠️ Add robots.txt and sitemap.xml
+
+### Testing Commands
+```bash
+# Run Lighthouse audit
+lighthouse https://your-domain.com --view
+
+# Or use Chrome DevTools
+# 1. Open DevTools (F12)
+# 2. Go to Lighthouse tab
+# 3. Generate report
+```
+
+## Image Asset Guidelines
+
+### Using the Image Helper
+
+All images should use the centralized `image_helper.dart` utility:
+
+```dart
+import '../utils/image_helper.dart';
+
+// List thumbnails (optimized for 80x80)
+ListTile(
+  leading: cachedThumbnail(hotel.imageUrl),
+)
+
+// Custom sized images
+Container(
+  child: cachedImage(
+    imageUrl,
+    width: 300,
+    height: 200,
+    fit: BoxFit.cover,
+  ),
+)
+
+// Full-width hero images
+cachedHeroImage(
+  imageUrl,
+  height: 500,
+)
+```
+
+### Benefits
+- ✅ Automatic memory and disk caching
+- ✅ Optimized cache sizes (2x memory, 3x disk)
+- ✅ Consistent loading placeholders
+- ✅ Graceful error handling
+- ✅ Theme-aware placeholder colors
+- ✅ Reduced bandwidth usage
+
+### Image URL Best Practices
+
+**Use CDN parameters for optimization:**
+```dart
+// Unsplash
+'https://images.unsplash.com/photo-id?w=800&h=600&fit=crop&q=80'
+
+// Cloudinary
+'https://res.cloudinary.com/demo/image/upload/w_800,h_600,c_fill,q_auto/sample.jpg'
+
+// imgix
+'https://demo.imgix.net/image.jpg?auto=format,compress&w=800&h=600'
+```
+
+**Avoid:**
+- ❌ Full-resolution images (>2MB)
+- ❌ Unoptimized formats (BMP, TIFF)
+- ❌ Direct Image.network() calls
+- ❌ Missing error handlers

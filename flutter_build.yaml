@@ -1,0 +1,9 @@
+targets:
+  $default:
+    builders:
+      flutter_tools:web_entrypoint:
+        options:
+          dart2js_args:
+            - --minify
+            - --fast-startup
+            - --no-source-maps

@@ -1,0 +1,128 @@
+{
+  "destination": "Paris",
+  "days": 5,
+  "budget": 50000,
+  "itinerary": [
+    {
+      "day": 1,
+      "title": "Arrival & Eiffel Tower",
+      "activities": [
+        {
+          "id": "1",
+          "title": "Eiffel Tower",
+          "description": "Visit the iconic Eiffel Tower and enjoy panoramic views",
+          "time": "10:00 AM - 1:00 PM",
+          "lat": 48.8584,
+          "lng": 2.2945,
+          "cost": "₹2000",
+          "rating": 4.8,
+          "type": "attraction",
+          "imageUrl": "https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?w=400"
+        },
+        {
+          "id": "2",
+          "title": "Le Jules Verne Restaurant",
+          "description": "Fine dining at the Eiffel Tower",
+          "time": "1:30 PM - 3:00 PM",
+          "lat": 48.8583,
+          "lng": 2.2945,
+          "cost": "₹5000",
+          "rating": 4.6,
+          "type": "restaurant",
+          "imageUrl": "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=400"
+        },
+        {
+          "id": "3",
+          "title": "Hotel Le Meurice",
+          "description": "Luxury hotel near Louvre",
+          "time": "Check-in 4:00 PM",
+          "lat": 48.8656,
+          "lng": 2.3282,
+          "cost": "₹12000/night",
+          "rating": 4.7,
+          "type": "hotel",
+          "imageUrl": "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=400"
+        }
+      ]
+    },
+    {
+      "day": 2,
+      "title": "Louvre & Seine River",
+      "activities": [
+        {
+          "id": "4",
+          "title": "Louvre Museum",
+          "description": "Explore world-famous art collections",
+          "time": "9:00 AM - 1:00 PM",
+          "lat": 48.8606,
+          "lng": 2.3376,
+          "cost": "₹1500",
+          "rating": 4.9,
+          "type": "attraction",
+          "imageUrl": "https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=400"
+        },
+        {
+          "id": "5",
+          "title": "Café de Flore",
+          "description": "Historic Parisian café",
+          "time": "1:30 PM - 3:00 PM",
+          "lat": 48.8542,
+          "lng": 2.3320,
+          "cost": "₹1200",
+          "rating": 4.4,
+          "type": "restaurant",
+          "imageUrl": "https://images.unsplash.com/photo-1554118811-1e0d58224f24?w=400"
+        },
+        {
+          "id": "6",
+          "title": "Seine River Cruise",
+          "description": "Evening cruise with city views",
+          "time": "7:00 PM - 9:00 PM",
+          "lat": 48.8606,
+          "lng": 2.3376,
+          "cost": "₹2500",
+          "rating": 4.7,
+          "type": "attraction",
+          "imageUrl": "https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=400"
+        }
+      ]
+    },
+    {
+      "day": 3,
+      "title": "Versailles Palace",
+      "activities": [
+        {
+          "id": "7",
+          "title": "Palace of Versailles",
+          "description": "Royal palace and gardens",
+          "time": "9:00 AM - 4:00 PM",
+          "lat": 48.8049,
+          "lng": 2.1204,
+          "cost": "₹2000",
+          "rating": 4.8,
+          "type": "attraction",
+          "imageUrl": "https://images.unsplash.com/photo-1551882547-ff40c63fe5fa?w=400"
+        },
+        {
+          "id": "8",
+          "title": "La Petite Venise",
+          "description": "Restaurant in Versailles gardens",
+          "time": "12:30 PM - 2:00 PM",
+          "lat": 48.8050,
+          "lng": 2.1205,
+          "cost": "₹3000",
+          "rating": 4.5,
+          "type": "restaurant",
+          "imageUrl": "https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?w=400"
+        }
+      ]
+    }
+  ],
+  "budget_breakdown": {
+    "accommodation": "₹36000",
+    "food": "₹15000",
+    "activities": "₹12000",
+    "transport": "₹8000",
+    "total": "₹71000"
+  }
+}

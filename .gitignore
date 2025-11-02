@@ -5,9 +5,11 @@
 *.swp
 .DS_Store
 .atom/
+.build/
 .buildlog/
 .history
 .svn/
+.swiftpm/
 migrate_working_dir/
 
 # IntelliJ related
@@ -25,12 +27,11 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
-.flutter-plugins
 .flutter-plugins-dependencies
-.packages
 .pub-cache/
 .pub/
 /build/
+/coverage/
 
 # Symbolication related
 app.*.symbols
@@ -43,42 +44,37 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-# Environment files
+# Environment variables and secrets
+env.sh
 .env
 .env.local
-.env.development
-.env.staging
 .env.production
+.env.development
+*.env
 
-# Firebase config files (if using local config)
-firebase_options_local.dart
-
-# Firebase cache and hosting files
-.firebase/
-.firebaserc.backup
-
-# Credentials and secrets
-credentials/
-secrets/
-*.key
+# API keys and credentials (extra safety)
+**/api_keys.dart
+**/secrets.dart
+**/credentials.json
 *.pem
+*.p12
+*.keystore
+!debug.keystore
 
-# Generated config files
-lib/config/app_config.dart
+# IDE and OS specific
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
 
-# Config files with sensitive data
-config/development.json
-config/production.json
-config/staging.json
+# Logs
+*.log
+logs/
 
-# Backup files and duplicates (should not be committed)
-**/*backup*
-**/*copy*
-*.backup
-lib/main copy.dart
-lib/main.dart.backup*
-lib/main_backup.dart
-lib/main_working_backup.dart
-lib/services/storage_service_backup.dart
-pubspec_original_backup.yaml
-pubspec_web_optimized.yaml
+# Temporary files
+temp_files.txt
+*.tmp
+*.temp

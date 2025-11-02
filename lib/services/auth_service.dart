@@ -1,128 +1,145 @@
-import 'dart:async';
-import 'dart:convert';
-import 'package:crypto/crypto.dart';
-import '../models/user_models.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import '../config.dart';
+import 'api_middleware.dart';
 
+/// Auth Service - Handles Firebase authentication and backend synchronization
+/// 
+/// Dual Authentication System:
+/// 1. Firebase Auth for user authentication
+/// 2. Backend sync via POST /api/v1/auth/google
+/// 
+/// The backend receives Firebase idToken and user data, validates it,
+/// and returns a JWT token for API access. This token is automatically
+/// stored by ApiMiddleware for subsequent API calls.
 class AuthService {
-  static final AuthService _instance = AuthService._internal();
-  factory AuthService() => _instance;
-  AuthService._internal();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    clientId: Config.googleSignInClientId,
+  );
 
-  User? _currentUser;
-  final StreamController<User?> _userController = StreamController<User?>.broadcast();
-  
-  Stream<User?> get userStream => _userController.stream;
-  User? get currentUser => _currentUser;
-  bool get isLoggedIn => _currentUser != null;
+  User? get currentUser => _auth.currentUser;
+  Stream<User?> get authStateChanges => _auth.authStateChanges();
 
-  Future<User?> signInWithGoogle() async {
-    // Mock Google Sign In
-    await Future.delayed(const Duration(seconds: 2));
-    
-    final user = User(
-      id: 'user_${DateTime.now().millisecondsSinceEpoch}',
-      email: 'user@gmail.com',
-      name: 'Travel Enthusiast',
-      photoUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150&h=150&fit=crop&crop=face',
-      profile: UserProfile(
-        notifications: NotificationSettings(),
-        travelStyle: 'balanced',
-        preferredCurrency: 'INR',
-        languages: ['English', 'Hindi'],
-      ),
-      createdAt: DateTime.now(),
-      lastLoginAt: DateTime.now(),
-    );
-    
-    _currentUser = user;
-    _userController.add(user);
-    await _saveUserLocally(user);
-    return user;
-  }
+  /// Sign in with Google and sync with backend
+  /// 
+  /// Flow:
+  /// 1. Authenticate with Firebase using Google Sign-In
+  /// 2. Get Firebase idToken
+  /// 3. Send to backend POST /api/v1/auth/google with idToken + userData + sessionId
+  /// 4. Backend validates token and returns JWT
+  /// 5. ApiMiddleware stores JWT for authenticated API calls
+  Future<UserCredential?> signInWithGoogle() async {
+    try {
+      // Step 1: Google Sign-In
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return null;
 
-  Future<User?> signInWithApple() async {
-    await Future.delayed(const Duration(seconds: 2));
-    
-    final user = User(
-      id: 'apple_${DateTime.now().millisecondsSinceEpoch}',
-      email: 'user@icloud.com',
-      name: 'Apple User',
-      photoUrl: null,
-      profile: UserProfile(
-        notifications: NotificationSettings(),
-        travelStyle: 'luxury',
-        preferredCurrency: 'INR',
-      ),
-      createdAt: DateTime.now(),
-      lastLoginAt: DateTime.now(),
-    );
-    
-    _currentUser = user;
-    _userController.add(user);
-    await _saveUserLocally(user);
-    return user;
-  }
-
-  Future<User?> signInWithEmail(String email, String password) async {
-    await Future.delayed(const Duration(seconds: 1));
-    
-    final user = User(
-      id: _hashString(email),
-      email: email,
-      name: email.split('@')[0],
-      photoUrl: null,
-      profile: UserProfile(
-        notifications: NotificationSettings(),
-      ),
-      createdAt: DateTime.now(),
-      lastLoginAt: DateTime.now(),
-    );
-    
-    _currentUser = user;
-    _userController.add(user);
-    await _saveUserLocally(user);
-    return user;
-  }
-
-  Future<void> signOut() async {
-    _currentUser = null;
-    _userController.add(null);
-    await _clearUserData();
-  }
-
-  Future<void> updateProfile(UserProfile profile) async {
-    if (_currentUser != null) {
-      _currentUser = User(
-        id: _currentUser!.id,
-        email: _currentUser!.email,
-        name: _currentUser!.name,
-        photoUrl: _currentUser!.photoUrl,
-        profile: profile,
-        createdAt: _currentUser!.createdAt,
-        lastLoginAt: DateTime.now(),
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
       );
-      _userController.add(_currentUser);
-      await _saveUserLocally(_currentUser!);
+
+      // Step 2: Firebase Authentication
+      final userCredential = await _auth.signInWithCredential(credential);
+      
+      // Step 3: Sync with backend
+      if (googleAuth.idToken != null && userCredential.user != null) {
+        try {
+          final user = userCredential.user!;
+          await ApiMiddleware.authenticateWithGoogle(
+            idToken: googleAuth.idToken!,
+            userData: {
+              'uid': user.uid,
+              'email': user.email,
+              'displayName': user.displayName,
+              'photoURL': user.photoURL,
+            },
+          );
+          // ApiMiddleware.authenticateWithGoogle automatically stores the JWT token
+        } catch (e) {
+          print('Backend sync failed: $e');
+          // Continue with Firebase auth even if backend sync fails
+        }
+      }
+
+      return userCredential;
+    } catch (e) {
+      throw Exception('Google sign-in failed: $e');
     }
   }
 
-  String _hashString(String input) {
-    var bytes = utf8.encode(input);
-    var digest = sha256.convert(bytes);
-    return digest.toString().substring(0, 16);
+  Future<UserCredential> signInWithEmail(String email, String password) async {
+    try {
+      final userCredential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      
+      // Sync with backend
+      try {
+        final idToken = await userCredential.user?.getIdToken();
+        if (idToken != null) {
+          await ApiMiddleware.authenticateWithGoogle(
+            idToken: idToken,
+            userData: {
+              'uid': userCredential.user!.uid,
+              'email': userCredential.user!.email,
+              'displayName': userCredential.user!.displayName,
+              'photoURL': userCredential.user!.photoURL,
+            },
+          );
+        }
+      } catch (e) {
+        print('Backend sync failed: $e');
+      }
+      
+      return userCredential;
+    } catch (e) {
+      throw Exception('Email sign-in failed: $e');
+    }
   }
 
-  Future<void> _saveUserLocally(User user) async {
-    // Mock local storage
-    print('Saving user: ${user.email}');
+  Future<UserCredential> signUpWithEmail(String email, String password) async {
+    try {
+      final userCredential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      
+      // Sync with backend
+      try {
+        final idToken = await userCredential.user?.getIdToken();
+        if (idToken != null) {
+          await ApiMiddleware.authenticateWithGoogle(
+            idToken: idToken,
+            userData: {
+              'uid': userCredential.user!.uid,
+              'email': userCredential.user!.email,
+              'displayName': userCredential.user!.displayName,
+              'photoURL': userCredential.user!.photoURL,
+            },
+          );
+        }
+      } catch (e) {
+        print('Backend sync failed: $e');
+      }
+      
+      return userCredential;
+    } catch (e) {
+      throw Exception('Sign-up failed: $e');
+    }
   }
 
-  Future<void> _clearUserData() async {
-    // Mock clear local storage
-    print('Clearing user data');
-  }
-
-  void dispose() {
-    _userController.close();
+  /// Sign out from Firebase and backend
+  Future<void> signOut() async {
+    await Future.wait([
+      _auth.signOut(),
+      _googleSignIn.signOut(),
+    ]);
+    
+    // Clear backend session and create new guest session
+    await ApiMiddleware.logout();
   }
 }

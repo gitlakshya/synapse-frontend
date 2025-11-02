@@ -1,0 +1,3 @@
+@echo off
+echo Starting EaseMyTrip AI Planner with Google Maps...
+flutter run -d chrome --dart-define=FIREBASE_API_KEY=temp --dart-define=FIREBASE_APP_ID=1:80902795823:web:07e68e2ea360ad68b0ccda --dart-define=FIREBASE_MESSAGING_SENDER_ID=80902795823 --dart-define=FIREBASE_PROJECT_ID=calcium-ratio-472014-r9 --dart-define=GOOGLE_SIGNIN_CLIENT_ID=80902795823-0peak8l1jm8jn0mcchcaik7n33mcnsdg.apps.googleusercontent.com --dart-define=GOOGLE_MAPS_API_KEY=AIzaSyDtOV162bzCWFOsjJHEs5IvRXNr0aebhLQ --dart-define=OPENWEATHER_API_KEY=temp --dart-define=GEMINI_API_KEY=temp

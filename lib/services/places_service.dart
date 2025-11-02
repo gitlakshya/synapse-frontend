@@ -36,30 +36,9 @@ class PlacesService {
         // Check API response status
         if (data['status'] == 'OK') {
           final predictions = data['predictions'] as List;
-
-          // Filter predictions to city/country-like results only.
-          // Google returns a `types` array per prediction; keep entries that include
-          // locality/postal_town/administrative_area_level_1/country which represent
-          // city or country level suggestions.
-          final allowedTypes = {
-            'locality',
-            'postal_town',
-            'administrative_area_level_1',
-            'administrative_area_level_2',
-            'country'
-          };
-
-          final filtered = predictions.where((p) {
-            try {
-              final types = (p['types'] as List).cast<String>();
-              return types.any((t) => allowedTypes.contains(t));
-            } catch (e) {
-              return false;
-            }
-          }).toList();
-
-          // Parse filtered predictions into PlacePrediction objects
-          return filtered.map((p) => PlacePrediction.fromJson(p)).toList();
+          
+          // Parse predictions into PlacePrediction objects
+          return predictions.map((p) => PlacePrediction.fromJson(p)).toList();
         } else if (data['status'] == 'ZERO_RESULTS') {
           return [];
         } else {

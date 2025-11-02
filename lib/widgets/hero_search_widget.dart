@@ -43,12 +43,9 @@ class _HeroSearchWidgetState extends State<HeroSearchWidget> {
   }
 
   bool get _isValid {
-    // Require that both fields have a selected place (placeId) to avoid free-text entries
     return _fromController.text.trim().isNotEmpty &&
-      _toController.text.trim().isNotEmpty &&
-      _fromPlaceId != null &&
-      _toPlaceId != null &&
-      _tripDuration >= 1;
+           _toController.text.trim().isNotEmpty &&
+           _tripDuration >= 1;
   }
 
   @override
@@ -226,15 +223,13 @@ class _HeroSearchWidgetState extends State<HeroSearchWidget> {
           displayStringForOption: (PlacePrediction prediction) => prediction.description,
           // Handle city selection
           onSelected: (PlacePrediction prediction) {
-            // Store selected city + country (full description) and place_id
-            controller.text = prediction.description;
-            setState(() {
-              if (isFrom) {
-                _fromPlaceId = prediction.placeId;
-              } else {
-                _toPlaceId = prediction.placeId;
-              }
-            });
+            // Store selected city name and place_id
+            controller.text = prediction.mainText;
+            if (isFrom) {
+              _fromPlaceId = prediction.placeId;
+            } else {
+              _toPlaceId = prediction.placeId;
+            }
           },
           // Build text field
           fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
@@ -257,18 +252,6 @@ class _HeroSearchWidgetState extends State<HeroSearchWidget> {
               controller: textEditingController,
               focusNode: focusNode,
               textCapitalization: TextCapitalization.words,
-              onChanged: (value) {
-                // If user types manually, clear the stored place id so a selection is required
-                if (isFrom) {
-                  if (_fromPlaceId != null) setState(() => _fromPlaceId = null);
-                } else {
-                  if (_toPlaceId != null) setState(() => _toPlaceId = null);
-                }
-                // Keep the external controller in sync
-                controller.text = value;
-                // Move cursor to end
-                textEditingController.selection = TextSelection.collapsed(offset: value.length);
-              },
               decoration: InputDecoration(
                 prefixIcon: Icon(icon, color: const Color(0xFF007BFF), size: 20),
                 suffixIcon: textEditingController.text.isNotEmpty
