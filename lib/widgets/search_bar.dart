@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import '../providers/app_state.dart';
+import '../services/places_service.dart';
 
 class AISearchBar extends StatefulWidget {
   const AISearchBar({super.key});
@@ -13,7 +15,16 @@ class _AISearchBarState extends State<AISearchBar> with SingleTickerProviderStat
   late TabController _tabController;
   final _fromController = TextEditingController();
   final _toController = TextEditingController();
-  final _cities = ['Mumbai', 'Delhi', 'Bangalore', 'Kolkata', 'Chennai', 'Hyderabad', 'Pune', 'Ahmedabad', 'Jaipur', 'Goa', 'Manali', 'Kerala', 'Udaipur', 'Varanasi', 'Agra'];
+  
+  // Google Places Autocomplete service
+  final _placesService = PlacesService();
+  
+  // Debounce timer to reduce API calls
+  Timer? _debounceTimer;
+  
+  // Store selected city data
+  String? _fromPlaceId;
+  String? _toPlaceId;
 
   @override
   void initState() {
@@ -26,6 +37,7 @@ class _AISearchBarState extends State<AISearchBar> with SingleTickerProviderStat
     _fromController.dispose();
     _toController.dispose();
     _tabController.dispose();
+    _debounceTimer?.cancel();
     super.dispose();
   }
 
@@ -141,6 +153,8 @@ class _AISearchBarState extends State<AISearchBar> with SingleTickerProviderStat
   }
 
   Widget _buildAutocompleteField(String label, TextEditingController controller) {
+    final isFrom = controller == _fromController;
+    
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -153,23 +167,71 @@ class _AISearchBarState extends State<AISearchBar> with SingleTickerProviderStat
             ],
           ),
         ),
-        Autocomplete<String>(
-          optionsBuilder: (textEditingValue) {
-            if (textEditingValue.text.isEmpty) return const Iterable<String>.empty();
-            return _cities.where((city) => city.toLowerCase().contains(textEditingValue.text.toLowerCase()));
-          },
-          onSelected: (selection) {
-            controller.text = selection;
-            final appState = context.read<AppState>();
-            label == 'From' ? appState.setFrom(selection) : appState.setTo(selection);
-          },
-          fieldViewBuilder: (context, textController, focusNode, onFieldSubmitted) {
-            if (textController.text != controller.text) {
-              textController.text = controller.text;
+        // Autocomplete widget with Google Places API
+        Autocomplete<PlacePrediction>(
+          // Fetch city predictions from Google Places API with debounce
+          optionsBuilder: (TextEditingValue textEditingValue) async {
+            final query = textEditingValue.text.trim();
+            
+            // Return empty if query is too short
+            if (query.length < 2) {
+              return const Iterable<PlacePrediction>.empty();
             }
+            
+            // Cancel previous debounce timer
+            _debounceTimer?.cancel();
+            
+            // Create completer for debounced result
+            final completer = Completer<Iterable<PlacePrediction>>();
+            
+            // Set debounce timer (300ms) to reduce API calls
+            _debounceTimer = Timer(const Duration(milliseconds: 300), () async {
+              try {
+                // Fetch city predictions from Google Places API
+                final predictions = await _placesService.getCityPredictions(query);
+                completer.complete(predictions);
+              } catch (e) {
+                completer.complete(const Iterable<PlacePrediction>.empty());
+              }
+            });
+            
+            return completer.future;
+          },
+          // Display city name and country in dropdown
+          displayStringForOption: (PlacePrediction prediction) => prediction.description,
+          // Handle city selection
+          onSelected: (PlacePrediction prediction) {
+            // Store selected city name and place_id
+            controller.text = prediction.mainText;
+            if (isFrom) {
+              _fromPlaceId = prediction.placeId;
+            } else {
+              _toPlaceId = prediction.placeId;
+            }
+            final appState = context.read<AppState>();
+            label == 'From' ? appState.setFrom(prediction.mainText) : appState.setTo(prediction.mainText);
+          },
+          // Build text field
+          fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+            // Sync with main controller
+            if (textEditingController.text != controller.text) {
+              textEditingController.value = textEditingController.value.copyWith(
+                text: controller.text,
+                selection: TextSelection.collapsed(offset: controller.text.length),
+              );
+            }
+            
+            // Sync text changes
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (textEditingController.text != controller.text) {
+                controller.text = textEditingController.text;
+              }
+            });
+            
             return TextField(
-              controller: textController,
+              controller: textEditingController,
               focusNode: focusNode,
+              textCapitalization: TextCapitalization.words,
               onChanged: (value) {
                 controller.text = value;
                 final appState = context.read<AppState>();
@@ -177,6 +239,23 @@ class _AISearchBarState extends State<AISearchBar> with SingleTickerProviderStat
               },
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.location_on, color: Color(0xFF007BFF), size: 20),
+                suffixIcon: textEditingController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 20),
+                        onPressed: () {
+                          // Clear input and stored data
+                          textEditingController.clear();
+                          controller.clear();
+                          if (isFrom) {
+                            _fromPlaceId = null;
+                          } else {
+                            _toPlaceId = null;
+                          }
+                          final appState = context.read<AppState>();
+                          label == 'From' ? appState.setFrom('') : appState.setTo('');
+                        },
+                      )
+                    : null,
                 hintText: 'Enter $label',
                 filled: true,
                 fillColor: Theme.of(context).colorScheme.surface,
@@ -184,6 +263,41 @@ class _AISearchBarState extends State<AISearchBar> with SingleTickerProviderStat
                 enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: Theme.of(context).colorScheme.outline)),
                 focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: Color(0xFF007BFF), width: 2)),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              ),
+            );
+          },
+          // Custom dropdown builder for better styling
+          optionsViewBuilder: (context, onSelected, options) {
+            return Align(
+              alignment: Alignment.topLeft,
+              child: Material(
+                elevation: 4,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  constraints: const BoxConstraints(maxHeight: 300),
+                  width: 400,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(8),
+                    itemCount: options.length,
+                    shrinkWrap: true,
+                    itemBuilder: (context, index) {
+                      final prediction = options.elementAt(index);
+                      return ListTile(
+                        leading: const Icon(Icons.location_city, color: Color(0xFF007BFF), size: 20),
+                        title: Text(
+                          prediction.mainText,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(
+                          prediction.secondaryText,
+                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+                        ),
+                        onTap: () => onSelected(prediction),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      );
+                    },
+                  ),
+                ),
               ),
             );
           },

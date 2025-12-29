@@ -34,6 +34,35 @@
   
   <!-- Google Sign-In Client ID -->
   <meta name="google-signin-client_id" content="80902795823-0peak8l1jm8jn0mcchcaik7n33mcnsdg.apps.googleusercontent.com">
+  
+  <!-- Google Maps JavaScript API with Places (New) library -->
+  <script>
+    // Prevent duplicate loading
+    if (!window.googleMapsLoading && !window.googleMapsLoaded) {
+      window.googleMapsLoading = true;
+      
+      // Callback when Google Maps API is loaded
+      window.initGoogleMaps = function() {
+        console.log('Google Maps API script loaded successfully');
+        window.googleMapsLoaded = true;
+        window.googleMapsLoading = false;
+      };
+      
+      // Load Google Maps API with Places (New) library
+      const apiKey = 'AIzaSyDtOV162bzCWFOsjJHEs5IvRXNr0aebhLQ';
+      if (apiKey && apiKey !== '') {
+        const script = document.createElement('script');
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&callback=initGoogleMaps&loading=async`;
+        script.async = true;
+        script.defer = true;
+        script.onerror = function() {
+          console.error('Failed to load Google Maps API');
+          window.googleMapsLoading = false;
+        };
+        document.head.appendChild(script);
+      }
+    }
+  </script>
 </head>
 <body>
   <!-- Loading indicator -->

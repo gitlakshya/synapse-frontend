@@ -1,53 +1,23 @@
 import 'dart:async';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import '../config.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'places_service_web.dart' if (dart.library.io) 'places_service_mobile.dart' as platform;
 
 /// Service for Google Places Autocomplete API
 /// Fetches city-level predictions only (no addresses or street-level data)
+/// Uses JavaScript API on web to avoid CORS issues, REST API on mobile
 class PlacesService {
-  static const String _baseUrl = 'https://maps.googleapis.com/maps/api/place';
-  
   /// Fetch city predictions from Google Places Autocomplete API
   /// Restricts results to cities only using types=(cities) filter
   /// Returns list of city suggestions with name, country, and place_id
   Future<List<PlacePrediction>> getCityPredictions(String query) async {
     if (query.trim().isEmpty) return [];
     
-    final apiKey = Config.googleMapsApiKey;
-    if (apiKey.isEmpty) {
-      print('Warning: Google Maps API key not configured');
-      return [];
-    }
-    
     try {
-      // Build API URL with city-level restriction
-      // types=(cities) ensures only city-level results are returned
-      final url = Uri.parse(
-        '$_baseUrl/autocomplete/json?input=${Uri.encodeComponent(query)}&types=(cities)&key=$apiKey'
-      );
-      
-      // Make API request
-      final response = await http.get(url);
-      
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        
-        // Check API response status
-        if (data['status'] == 'OK') {
-          final predictions = data['predictions'] as List;
-          
-          // Parse predictions into PlacePrediction objects
-          return predictions.map((p) => PlacePrediction.fromJson(p)).toList();
-        } else if (data['status'] == 'ZERO_RESULTS') {
-          return [];
-        } else {
-          print('Places API error: ${data['status']}');
-          return [];
-        }
+      // Use platform-specific implementation
+      if (kIsWeb) {
+        return await platform.getCityPredictions(query);
       } else {
-        print('HTTP error: ${response.statusCode}');
-        return [];
+        return await platform.getCityPredictions(query);
       }
     } catch (e) {
       print('Error fetching city predictions: $e');
